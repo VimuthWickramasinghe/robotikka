@@ -264,16 +264,28 @@ void TaskTelemetryOTA(void *pvParameters) {
 
     updateLedAnimation();
 
+    // Stream live IR readings if enabled via 'irstream' command
+    static unsigned long lastIRStreamPrint = 0;
+    if (isIRDebugStreamEnabled() && millis() - lastIRStreamPrint >= 100) {
+      lastIRStreamPrint = millis();
+      LineSensorState s = readLineSensors();
+      Serial.printf("[IR LIVE] A1:%4u A2:%4u | D3:%d D4:%d D5:%d D6:%d D7:%d D8:%d | Pos:%+.2f | Found:%s\n",
+                    s.raw[0], s.raw[1], s.raw[2], s.raw[3], s.raw[4], s.raw[5], s.raw[6], s.raw[7],
+                    s.position, s.lineFound ? "YES" : "NO");
+    }
+
     // Periodic heartbeat debug log (every 3 seconds)
     static unsigned long lastDebugPrint = 0;
     if (millis() - lastDebugPrint >= 3000) {
       lastDebugPrint = millis();
-      if (otaEnabled) {
-        Serial.printf("[DEBUG] Core0 OTA Active on %s | Free Heap: %u bytes\n", 
-                      WiFi.localIP().toString().c_str(), ESP.getFreeHeap());
-      } else {
-        Serial.printf("[DEBUG] Core0 Offline (Competition Mode) | Free Heap: %u bytes\n", 
-                      ESP.getFreeHeap());
+      if (!isIRDebugStreamEnabled()) {
+        if (otaEnabled) {
+          Serial.printf("[DEBUG] Core0 OTA Active on %s | Free Heap: %u bytes\n", 
+                        WiFi.localIP().toString().c_str(), ESP.getFreeHeap());
+        } else {
+          Serial.printf("[DEBUG] Core0 Offline (Competition Mode) | Free Heap: %u bytes\n", 
+                        ESP.getFreeHeap());
+        }
       }
     }
 

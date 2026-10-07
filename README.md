@@ -38,6 +38,8 @@ To flash code wirelessly during pit testing without a USB cable:
 Open the Arduino IDE **Serial Monitor** at **115200 baud** (with line ending set to **Newline**). You can send live angle commands to test and calibrate the arm and gripper servos:
 
 ### Available Commands:
+* `ir` : Print a detailed single snapshot table of all 8 IR sensors (raw ADC/digital values, black/white threshold status, active count, and computed centroid position).
+* `irstream` : Toggle continuous real-time streaming of all 8 sensor readings (printed every 100 ms). Send `irstream` again to turn off.
 * `s1 <angle>` : Move **Servo 1** (GPIO 15 / Shoulder) to angle ($0^\circ \text{ to } 180^\circ$). Example: `s1 90`
 * `s2 <angle>` : Move **Servo 2** (GPIO 16 / Elbow) to angle ($0^\circ \text{ to } 180^\circ$). Example: `s2 45`
 * `s3 <angle>` : Move **Servo 3** (GPIO 17 / Gripper) to angle ($0^\circ \text{ to } 180^\circ$). Example: `s3 120`
@@ -71,3 +73,4 @@ When using the **Arduino IDE 2.x**:
 * **Upload Speed**: `921600`
 * **USB CDC On Boot**: **`Enabled`** *(Required for native USB Serial Monitor output)*
 * **Baud Rate**: **`115200`**
+

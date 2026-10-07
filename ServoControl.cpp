@@ -1,4 +1,6 @@
 #include "ServoControl.h"
+#include "LineSensor.h"
+
 
 // Standard RC Servo PWM parameters:
 // Frequency: 50 Hz (20ms period)
@@ -56,15 +58,19 @@ void setServoAngle(int servoNum, int angle) {
 }
 
 static void printServoHelp() {
-  Serial.println("\n--- SERVO TEST COMMAND MENU ---");
+  Serial.println("\n--- ROBOTIKKA SERIAL TEST COMMANDS ---");
+  Serial.println(" [SERVO COMMANDS]");
   Serial.println("  s1 <angle>    : Move Servo 1 (GPIO 15) e.g., 's1 90'");
   Serial.println("  s2 <angle>    : Move Servo 2 (GPIO 16) e.g., 's2 45'");
   Serial.println("  s3 <angle>    : Move Servo 3 (GPIO 17) e.g., 's3 180'");
   Serial.println("  all <angle>   : Move all 3 servos e.g., 'all 90'");
   Serial.println("  sweep <1|2|3> : Smooth sweep test 0 -> 180 -> 0");
   Serial.println("  status        : Print current servo angles");
+  Serial.println(" [IR SENSOR COMMANDS]");
+  Serial.println("  ir            : Print one snapshot table of all 8 IR sensor readings");
+  Serial.println("  irstream      : Toggle continuous live IR sensor printing (every 100ms)");
   Serial.println("  help          : Show this menu");
-  Serial.println("--------------------------------\n");
+  Serial.println("---------------------------------------\n");
 }
 
 void handleServoSerialCommands() {
@@ -81,6 +87,14 @@ void handleServoSerialCommands() {
   if (cmd == "help") {
     printServoHelp();
   } 
+  else if (cmd == "ir") {
+    printLineSensorValues();
+  }
+  else if (cmd == "irstream") {
+    bool newState = !isIRDebugStreamEnabled();
+    setIRDebugStream(newState);
+    Serial.printf("[IR STREAM] Live sensor stream %s\n", newState ? "ENABLED (streaming every 100ms)" : "DISABLED");
+  }
   else if (cmd == "status") {
     Serial.printf("[SERVO STATUS] S1 (GPIO15): %d° | S2 (GPIO16): %d° | S3 (GPIO17): %d°\n",
                   currentAngle[0], currentAngle[1], currentAngle[2]);

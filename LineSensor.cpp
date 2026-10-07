@@ -95,3 +95,50 @@ LineSensorState readLineSensors() {
   return state;
 }
 
+static bool irDebugStream = false;
+
+void setIRDebugStream(bool enable) {
+  irDebugStream = enable;
+}
+
+bool isIRDebugStreamEnabled() {
+  return irDebugStream;
+}
+
+void printLineSensorValues() {
+  LineSensorState s = readLineSensors();
+
+  // Print nicely formatted table / values
+  Serial.println("======================================================================");
+  Serial.println(" [IR SENSOR READINGS] (Schematic Rev 2.0 - 8-Sensor Array J4)");
+  Serial.println("----------------------------------------------------------------------");
+  Serial.println(" Sensor :  IR_1    IR_2    IR_3    IR_4    IR_5    IR_6    IR_7    IR_8");
+  Serial.println(" GPIO   :  (G1)    (G2)    (G38)   (G39)   (G40)   (G41)   (G42)   (G47)");
+  Serial.println(" Type   : [ADC1]  [ADC1]   [DIG]   [DIG]   [DIG]   [DIG]   [DIG]   [DIG]");
+  Serial.println("----------------------------------------------------------------------");
+
+  // Raw readings (IR_1 & IR_2 are 12-bit ADC 0-4095; IR_3 to IR_8 are digital 0 or 1)
+  Serial.printf(" Raw Val:  %4u    %4u       %d       %d       %d       %d       %d       %d\n",
+                s.raw[0], s.raw[1], s.raw[2], s.raw[3], s.raw[4], s.raw[5], s.raw[6], s.raw[7]);
+
+  // Detected Black/White status
+  Serial.printf(" Status :   %s      %s      %s      %s      %s      %s      %s      %s\n",
+                s.isBlack[0] ? "BLK" : "---",
+                s.isBlack[1] ? "BLK" : "---",
+                s.isBlack[2] ? "BLK" : "---",
+                s.isBlack[3] ? "BLK" : "---",
+                s.isBlack[4] ? "BLK" : "---",
+                s.isBlack[5] ? "BLK" : "---",
+                s.isBlack[6] ? "BLK" : "---",
+                s.isBlack[7] ? "BLK" : "---");
+
+  Serial.println("----------------------------------------------------------------------");
+  Serial.printf(" Active Sensors: %d/8 | Line Found: %s | Dotted Gap: %s\n",
+                s.activeCount, 
+                s.lineFound ? "YES" : "NO",
+                s.isDottedGap ? "YES" : "NO");
+  Serial.printf(" Computed Position: %+.2f  (Left: -3.5 <--- Center: 0.00 ---> Right: +3.5)\n", s.position);
+  Serial.println("======================================================================\n");
+}
+
+

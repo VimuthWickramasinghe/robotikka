@@ -20,3 +20,11 @@ void calibrateLineSensors();
 // Read line sensor array and compute centroid / position
 LineSensorState readLineSensors();
 
+// Format and print all 8 IR sensor readings (raw analog/digital + binary line status + centroid)
+void printLineSensorValues();
+
+// Enable or disable continuous IR sensor printing
+void setIRDebugStream(bool enable);
+bool isIRDebugStreamEnabled();
+
+
