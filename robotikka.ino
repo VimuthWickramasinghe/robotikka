@@ -13,56 +13,13 @@
 const char *ssid = "Dialog 4G";
 const char *password = "BHTBEH22T64";
 
-// ==============================================================================
-// PIN DEFINITIONS (Extracted from Schematic.pdf - EasyEDA Rev 2.0)
-// ==============================================================================
+#include "Config.h"
+#include "MotorDriver.h"
+#include "LineSensor.h"
+#include "LinePID.h"
+#include "ServoControl.h"
 
-// --- TB6612FNG Dual DC Motor Driver (U6) ---
-const int PIN_MOTOR_PWMA  = 8;   // GPIO8:  Motor A PWM Speed Control
-const int PIN_MOTOR_AIN1  = 4;   // GPIO4:  Motor A Direction 1
-const int PIN_MOTOR_AIN2  = 5;   // GPIO5:  Motor A Direction 2
-const int PIN_MOTOR_PWMB  = 9;   // GPIO9:  Motor B PWM Speed Control
-const int PIN_MOTOR_BIN1  = 6;   // GPIO6:  Motor B Direction 1
-const int PIN_MOTOR_BIN2  = 7;   // GPIO7:  Motor B Direction 2
-// Note: STBY (Standby) is hardwired to +3.3V in hardware (always enabled)
 
-// --- Arm & Gripper Servos (U7, U8, U9) ---
-const int PIN_SERVO_1     = 15;  // GPIO15 (PWM1): Servo U7
-const int PIN_SERVO_2     = 16;  // GPIO16 (PWM2): Servo U8
-const int PIN_SERVO_3     = 17;  // GPIO17 (PWM3): Servo U9
-
-// --- Shared I2C Bus (Display H1, Color Sensor H6, TOF Panel H5) ---
-const int PIN_I2C_SDA     = 11;  // GPIO11: I2C Serial Data
-const int PIN_I2C_SCL     = 12;  // GPIO12: I2C Serial Clock
-
-// --- TOF Sensors Panel (H5) - Shutdown / Enable Pins ---
-const int PIN_TOF_XSHUT1  = 13;  // GPIO13: TOF Sensor 1 XSHUT
-const int PIN_TOF_XSHUT2  = 14;  // GPIO14: TOF Sensor 2 XSHUT
-const int PIN_TOF_XSHUT3  = 10;  // GPIO10: TOF Sensor 3 XSHUT
-const int PIN_TOF_XSHUT4  = 48;  // GPIO48: TOF Sensor 4 XSHUT
-
-// --- Color Sensor (H6) ---
-const int PIN_COLOR_INT   = 18;  // GPIO18: Color Sensor Interrupt
-const int PIN_COLOR_LED   = 21;  // GPIO21: Net "LED" (Color Sensor illumination / Status LED)
-
-// --- 8-Sensor IR Line Following Array (J4) ---
-const int PIN_IR_1        = 1;   // GPIO1  (ADC1_CH0)
-const int PIN_IR_2        = 2;   // GPIO2  (ADC1_CH1)
-const int PIN_IR_3        = 38;  // GPIO38 (Digital)
-const int PIN_IR_4        = 39;  // GPIO39 / MTCK (Digital)
-const int PIN_IR_5        = 40;  // GPIO40 / MTDO (Digital)
-const int PIN_IR_6        = 41;  // GPIO41 / MTDI (Digital)
-const int PIN_IR_7        = 42;  // GPIO42 / MTMS (Digital)
-const int PIN_IR_8        = 47;  // GPIO47 (Digital)
-
-const int IR_PINS[8] = {
-  PIN_IR_1, PIN_IR_2, PIN_IR_3, PIN_IR_4,
-  PIN_IR_5, PIN_IR_6, PIN_IR_7, PIN_IR_8
-};
-
-// --- User Button & Status Indicator ---
-const int BUTTON_PIN      = 0;   // GPIO0: Onboard BOOT button (Active LOW)
-const int STATUS_LED_PIN  = 21;  // GPIO21: Net "LED" (Onboard indicator / Color Sensor LED)
 
 // ==============================================================================
 // FREERTOS OBJECTS & STATE MANAGEMENT
@@ -298,6 +255,9 @@ void TaskTelemetryOTA(void *pvParameters) {
   for (;;) {
     checkTripleClick();
 
+    // Check for interactive Servo commands from Serial Monitor
+    handleServoSerialCommands();
+
     if (otaEnabled) {
       ArduinoOTA.handle();
     }
@@ -328,14 +288,38 @@ void TaskTelemetryOTA(void *pvParameters) {
 void TaskRobotControl(void *pvParameters) {
   Serial.printf("[RTOS] TaskRobotControl running on Core %d\n", xPortGetCoreID());
 
+  // Initialize motor, servo, and sensor subsystems on Core 1
+  initMotors();
+  initServos();
+  initLineSensors();
+  initLinePID(45.0f, 0.0f, 25.0f, 160); // Tune Kp, Ki, Kd, baseSpeed
+
   TickType_t xLastWakeTime = xTaskGetTickCount();
   const TickType_t xControlPeriod = pdMS_TO_TICKS(10); // Strict 100 Hz (10ms) control loop
 
   for (;;) {
-    // 1. Read Line Following Sensors (IR array)
-    // 2. Compute PID Error & calculate motor speeds
-    // 3. Read TOF Wall Distance sensors (over I2C)
-    // 4. Update TB6612 motor PWM outputs
+    switch (currentRobotMode) {
+      case ROBOT_LINE_FOLLOWING: {
+        // Read 8-sensor array & compute position centroid (-3.5 to +3.5)
+        LineSensorState lineState = readLineSensors();
+
+        // Update PID steering & drive TB6612 motors
+        updateLineFollower(lineState.position, lineState.isDottedGap);
+        break;
+      }
+
+      case ROBOT_WALL_FOLLOWING: {
+        // TOF wall following logic will plug in here
+        break;
+      }
+
+      case ROBOT_IDLE_STOPPED:
+      default: {
+        // Safe idle state (motors stopped)
+        stopMotors();
+        break;
+      }
+    }
 
     // Deterministic delay for consistent PID dt
     vTaskDelayUntil(&xLastWakeTime, xControlPeriod);
@@ -362,23 +346,13 @@ void setup() {
   Serial.printf("Total Free Heap: %u bytes\n", ESP.getFreeHeap());
   Serial.println("-----------------------------------------");
 
-  // Initialize Hardware Pins
+  // Initialize UI Pins
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
 
-  // Motor Driver Pins
-  pinMode(PIN_MOTOR_PWMA, OUTPUT);
-  pinMode(PIN_MOTOR_AIN1, OUTPUT);
-  pinMode(PIN_MOTOR_AIN2, OUTPUT);
-  pinMode(PIN_MOTOR_PWMB, OUTPUT);
-  pinMode(PIN_MOTOR_BIN1, OUTPUT);
-  pinMode(PIN_MOTOR_BIN2, OUTPUT);
-
-  // IR Sensor Pins
-  for (int i = 0; i < 8; i++) {
-    pinMode(IR_PINS[i], INPUT);
-  }
+  // Set initial robot mode to Line Following
+  currentRobotMode = ROBOT_LINE_FOLLOWING;
 
   // Competition rule: Wi-Fi starts OFF
   WiFi.mode(WIFI_OFF);
