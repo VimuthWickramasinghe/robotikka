@@ -33,13 +33,45 @@ To flash code wirelessly during pit testing without a USB cable:
 
 ---
 
+## 🔍 IR Sensor Array Calibration & Diagnostics
+
+You can test and calibrate the 8-sensor IR array (`J4`) live via the Arduino IDE **Serial Monitor** (set baud to **115200**, line ending to **Newline**):
+
+### Available Diagnostic Commands:
+* `ir` : Print a detailed single snapshot table of all 8 sensor channels with pin types, raw ADC/digital levels, line detection threshold status, active count, and computed centroid line position.
+* `irstream` : Toggle real-time continuous streaming of all 8 sensor channels (streamed every 100 ms). Send `irstream` again to turn off.
+
+### Sample Snapshot Output (`ir`):
+```text
+======================================================================
+ [IR SENSOR READINGS] (Schematic Rev 2.0 - 8-Sensor Array J4)
+----------------------------------------------------------------------
+ Sensor :  IR_1    IR_2    IR_3    IR_4    IR_5    IR_6    IR_7    IR_8
+ GPIO   :  (G1)    (G2)    (G38)   (G39)   (G40)   (G41)   (G42)   (G47)
+ Type   : [ADC1]  [ADC1]   [DIG]   [DIG]   [DIG]   [DIG]   [DIG]   [DIG]
+----------------------------------------------------------------------
+ Raw Val:  3450    3210       1       0       0       0       0       0
+ Status :   BLK     BLK     BLK     ---     ---     ---     ---     ---
+----------------------------------------------------------------------
+ Active Sensors: 3/8 | Line Found: YES | Dotted Gap: NO
+ Computed Position: -2.33  (Left: -3.5 <--- Center: 0.00 ---> Right: +3.5)
+======================================================================
+```
+
+### Sample Live Stream Output (`irstream`):
+```text
+[IR LIVE] A1:3420 A2:3100 | D3:1 D4:0 D5:0 D6:0 D7:0 D8:0 | Pos:-2.33 | Found:YES
+[IR LIVE] A1:1200 A2:3580 | D3:1 D4:1 D5:0 D6:0 D7:0 D8:0 | Pos:-1.50 | Found:YES
+[IR LIVE] A1: 450 A2: 520 | D3:0 D4:1 D5:1 D6:0 D7:0 D8:0 | Pos:+0.00 | Found:YES
+```
+
+---
+
 ## 🛠️ Testing Servos via the Serial Monitor
 
-Open the Arduino IDE **Serial Monitor** at **115200 baud** (with line ending set to **Newline**). You can send live angle commands to test and calibrate the arm and gripper servos:
+Use the same **Serial Monitor** (115200 baud) to calibrate the robotic arm and gripper servos:
 
 ### Available Commands:
-* `ir` : Print a detailed single snapshot table of all 8 IR sensors (raw ADC/digital values, black/white threshold status, active count, and computed centroid position).
-* `irstream` : Toggle continuous real-time streaming of all 8 sensor readings (printed every 100 ms). Send `irstream` again to turn off.
 * `s1 <angle>` : Move **Servo 1** (GPIO 15 / Shoulder) to angle ($0^\circ \text{ to } 180^\circ$). Example: `s1 90`
 * `s2 <angle>` : Move **Servo 2** (GPIO 16 / Elbow) to angle ($0^\circ \text{ to } 180^\circ$). Example: `s2 45`
 * `s3 <angle>` : Move **Servo 3** (GPIO 17 / Gripper) to angle ($0^\circ \text{ to } 180^\circ$). Example: `s3 120`
