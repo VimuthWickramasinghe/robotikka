@@ -34,14 +34,15 @@ constexpr int PIN_COLOR_INT   = 18;  // GPIO18: Color Sensor Interrupt
 constexpr int PIN_COLOR_LED   = 21;  // GPIO21: Net "LED" (Color Sensor illumination / Status LED)
 
 // --- 8-Sensor IR Line Following Array (J4) ---
+// Verified analog pins from working code (ADC2 pins require WiFi.mode(WIFI_OFF))
 constexpr int PIN_IR_1        = 1;   // GPIO1  (ADC1_CH0)
 constexpr int PIN_IR_2        = 2;   // GPIO2  (ADC1_CH1)
-constexpr int PIN_IR_3        = 38;  // GPIO38 (Digital)
-constexpr int PIN_IR_4        = 39;  // GPIO39 / MTCK (Digital)
-constexpr int PIN_IR_5        = 40;  // GPIO40 / MTDO (Digital)
-constexpr int PIN_IR_6        = 41;  // GPIO41 / MTDI (Digital)
-constexpr int PIN_IR_7        = 42;  // GPIO42 / MTMS (Digital)
-constexpr int PIN_IR_8        = 47;  // GPIO47 (Digital)
+constexpr int PIN_IR_3        = 3;   // GPIO3
+constexpr int PIN_IR_4        = 7;   // GPIO7
+constexpr int PIN_IR_5        = 6;   // GPIO6
+constexpr int PIN_IR_6        = 5;   // GPIO5
+constexpr int PIN_IR_7        = 4;   // GPIO4
+constexpr int PIN_IR_8        = 10;  // GPIO10
 
 inline const int IR_PINS[8] = {
   PIN_IR_1, PIN_IR_2, PIN_IR_3, PIN_IR_4,
@@ -50,5 +51,6 @@ inline const int IR_PINS[8] = {
 
 // --- User Button & Status Indicator ---
 constexpr int BUTTON_PIN      = 0;   // GPIO0: Onboard BOOT button (Active LOW)
+constexpr int RGB_LED_PIN     = 48;  // GPIO48: Onboard WS2812 RGB NeoPixel
 constexpr int STATUS_LED_PIN  = 21;  // GPIO21: Net "LED" (Onboard indicator / Color Sensor LED)
 
