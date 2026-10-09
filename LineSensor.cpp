@@ -3,30 +3,49 @@
 // Default analog threshold for ADC channels (GPIO1, GPIO2: 12-bit, 0-4095)
 // Photodiode over black surface: high resistance / higher voltage depending on circuit
 // Adjust via calibration or potentiometer on module
-static uint16_t analogThreshold = 2000;
+static uint16_t sensorMin[8] = {4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095};
+static uint16_t sensorMax[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+static uint16_t sensorThreshold[8] = {2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000};
 
 // Track last known line position for memory during dotted lines or sharp curves
 static float lastValidPosition = 0.0f;
 static unsigned long lineLostTime = 0;
 
 void initLineSensors() {
-  // ADC channels
   analogReadResolution(12);
-  pinMode(PIN_IR_1, INPUT);
-  pinMode(PIN_IR_2, INPUT);
-
-  // Digital channels
-  pinMode(PIN_IR_3, INPUT);
-  pinMode(PIN_IR_4, INPUT);
-  pinMode(PIN_IR_5, INPUT);
-  pinMode(PIN_IR_6, INPUT);
-  pinMode(PIN_IR_7, INPUT);
-  pinMode(PIN_IR_8, INPUT);
+  for (int i = 0; i < 8; i++) {
+    pinMode(IR_PINS[i], INPUT);
+  }
 }
 
 void calibrateLineSensors() {
-  // Can be extended with a routine that sweeps over line
+  Serial.println("\n[CALIB] Starting 5-second IR Array Calibration sweep...");
+  Serial.println("[CALIB] Move sensor array back and forth across black line and white surface!");
+
+  for (int i = 0; i < 8; i++) {
+    sensorMin[i] = 4095;
+    sensorMax[i] = 0;
+  }
+
+  unsigned long startCalib = millis();
+  while (millis() - startCalib < 5000) {
+    for (int i = 0; i < 8; i++) {
+      uint16_t val = analogRead(IR_PINS[i]);
+      if (val < sensorMin[i]) sensorMin[i] = val;
+      if (val > sensorMax[i]) sensorMax[i] = val;
+    }
+    delay(10);
+  }
+
+  // Calculate midpoints
+  Serial.println("[CALIB] Calibration Complete! Computed Thresholds:");
+  for (int i = 0; i < 8; i++) {
+    sensorThreshold[i] = (sensorMin[i] + sensorMax[i]) / 2;
+    Serial.printf(" Ch%d: Min=%4u Max=%4u -> Thresh=%4u\n", i, sensorMin[i], sensorMax[i], sensorThreshold[i]);
+  }
+  Serial.println();
 }
+
 
 LineSensorState readLineSensors() {
   LineSensorState state;
@@ -34,35 +53,29 @@ LineSensorState readLineSensors() {
   float weightedSum = 0.0f;
   float totalWeight = 0.0f;
 
-  // Sensor array weights from left to right:
-  // Index:   0     1     2     3     4     5     6     7
-  // Weight: -3.5  -2.5  -1.5  -0.5  +0.5  +1.5  +2.5  +3.5
-  const float weights[8] = {-3.5f, -2.5f, -1.5f, -0.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+  // Center 5 PID sensors: A6, A5, A4, A3, A2 (Left to Right across line)
+  // Index:   0 (A6)    1 (A5)    2 (A4)    3 (A3)    4 (A2)
+  // Weight:  -2.0f     -1.0f      0.0f     +1.0f     +2.0f
+  const float pidWeights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
-  // 1. Read Analog sensors (IR_1, IR_2)
-  state.raw[0] = analogRead(PIN_IR_1);
-  state.raw[1] = analogRead(PIN_IR_2);
-
-  // 2. Read Digital sensors (IR_3 to IR_8)
-  for (int i = 2; i < 8; i++) {
-    state.raw[i] = digitalRead(IR_PINS[i]);
-  }
-
-  // Determine black line status:
-  // Active = HIGH on most IR sensor modules with comparator (or LOW depending on active-low setting)
-  // Default: digital HIGH = black detected, ADC > threshold = black detected
-  state.isBlack[0] = (state.raw[0] > analogThreshold);
-  state.isBlack[1] = (state.raw[1] > analogThreshold);
-  for (int i = 2; i < 8; i++) {
-    state.isBlack[i] = (state.raw[i] == HIGH);
-  }
-
-  // Centroid Calculation:
-  // Computes weighted average position
+  // 1. Read all 8 channels as Analog ADC values (0 - 4095)
+  // Order: [0]=A6, [1]=A5, [2]=A4, [3]=A3, [4]=A2, [5]=A1, [6]=A7, [7]=A8
   for (int i = 0; i < 8; i++) {
+    state.raw[i] = analogRead(IR_PINS[i]);
+    state.isBlack[i] = (state.raw[i] > sensorThreshold[i]);
+  }
+
+
+  // 2. Auxiliary navigation sensors
+  state.rightTurn  = state.isBlack[5]; // Index 5: A1 (RIGHT Turn sensor)
+  state.leftTurn   = state.isBlack[6]; // Index 6: A7 (LEFT Turn sensor)
+  state.backSensor = state.isBlack[7]; // Index 7: A8 (BACK reference sensor)
+
+  // 3. Centroid calculation exclusively on center 5 PID sensors (indices 0 to 4)
+  for (int i = 0; i < 5; i++) {
     if (state.isBlack[i]) {
       state.activeCount++;
-      weightedSum += weights[i];
+      weightedSum += pidWeights[i];
       totalWeight += 1.0f;
     }
   }
@@ -74,21 +87,20 @@ LineSensorState readLineSensors() {
     lastValidPosition = state.position;
     lineLostTime = 0;
   } else {
-    // No sensors currently see the line
+    // No center PID sensors see the line
     state.lineFound = false;
     if (lineLostTime == 0) {
       lineLostTime = millis();
     }
 
-    // Per competition guidelines: "Dotted segments: Gaps and lengths between 2 to 5 cm"
-    // If line is lost for a brief duration (< 350ms), hold last valid position (dotted line handling)
+    // Dotted line handling (maintain trajectory for brief gaps < 350ms)
     if (millis() - lineLostTime < 350) {
       state.isDottedGap = true;
-      state.position = lastValidPosition; // Maintain trajectory across gap
+      state.position = lastValidPosition;
     } else {
       state.isDottedGap = false;
       // Hard off-track: maintain sign of last known direction to steer back
-      state.position = (lastValidPosition > 0.0f) ? 3.5f : -3.5f;
+      state.position = (lastValidPosition > 0.0f) ? 2.0f : -2.0f;
     }
   }
 
@@ -106,39 +118,18 @@ bool isIRDebugStreamEnabled() {
 }
 
 void printLineSensorValues() {
+  // Rate-limit serial output to ~10 Hz (every 100 ms) so it doesn't flood when looping fast
+  static unsigned long lastPrintMs = 0;
+  if (millis() - lastPrintMs < 100) return;
+  lastPrintMs = millis();
+
   LineSensorState s = readLineSensors();
 
-  // Print nicely formatted table / values
-  Serial.println("======================================================================");
-  Serial.println(" [IR SENSOR READINGS] (Schematic Rev 2.0 - 8-Sensor Array J4)");
-  Serial.println("----------------------------------------------------------------------");
-  Serial.println(" Sensor :  IR_1    IR_2    IR_3    IR_4    IR_5    IR_6    IR_7    IR_8");
-  Serial.println(" GPIO   :  (G1)    (G2)    (G38)   (G39)   (G40)   (G41)   (G42)   (G47)");
-  Serial.println(" Type   : [ADC1]  [ADC1]   [DIG]   [DIG]   [DIG]   [DIG]   [DIG]   [DIG]");
-  Serial.println("----------------------------------------------------------------------");
-
-  // Raw readings (IR_1 & IR_2 are 12-bit ADC 0-4095; IR_3 to IR_8 are digital 0 or 1)
-  Serial.printf(" Raw Val:  %4u    %4u       %d       %d       %d       %d       %d       %d\n",
-                s.raw[0], s.raw[1], s.raw[2], s.raw[3], s.raw[4], s.raw[5], s.raw[6], s.raw[7]);
-
-  // Detected Black/White status
-  Serial.printf(" Status :   %s      %s      %s      %s      %s      %s      %s      %s\n",
-                s.isBlack[0] ? "BLK" : "---",
-                s.isBlack[1] ? "BLK" : "---",
-                s.isBlack[2] ? "BLK" : "---",
-                s.isBlack[3] ? "BLK" : "---",
-                s.isBlack[4] ? "BLK" : "---",
-                s.isBlack[5] ? "BLK" : "---",
-                s.isBlack[6] ? "BLK" : "---",
-                s.isBlack[7] ? "BLK" : "---");
-
-  Serial.println("----------------------------------------------------------------------");
-  Serial.printf(" Active Sensors: %d/8 | Line Found: %s | Dotted Gap: %s\n",
-                s.activeCount, 
-                s.lineFound ? "YES" : "NO",
-                s.isDottedGap ? "YES" : "NO");
-  Serial.printf(" Computed Position: %+.2f  (Left: -3.5 <--- Center: 0.00 ---> Right: +3.5)\n", s.position);
-  Serial.println("======================================================================\n");
+  // Single-line print with functional roles clearly labeled:
+  // Center 5 PID: A6, A5, A4, A3, A2 | Auxiliary: R(A1), L(A7), B(A8)
+  Serial.printf("PID:[A6:%4u A5:%4u A4:%4u A3:%4u A2:%4u]  R(A1):%4u  L(A7):%4u  B(A8):%4u\n",
+                s.raw[0], s.raw[1], s.raw[2], s.raw[3], s.raw[4],
+                s.raw[5], s.raw[6], s.raw[7]);
 }
 
 

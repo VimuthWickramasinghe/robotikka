@@ -16,6 +16,5 @@ void setServoAngle(int servoNum, int angle);
 //   "s3 120"   -> Move Servo 3 to 120 degrees
 //   "all 90"   -> Move all servos to 90 degrees
 //   "sweep 1"  -> Run a sweep test (0 -> 180 -> 0) on Servo 1
-//   "help"     -> Print available commands
 void handleServoSerialCommands();
-
+void handleServoSerialCommandsWithLine(const String &line);

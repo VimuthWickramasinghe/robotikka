@@ -68,19 +68,15 @@ static void printServoHelp() {
   Serial.println("  status        : Print current servo angles");
   Serial.println(" [IR SENSOR COMMANDS]");
   Serial.println("  ir            : Print one snapshot table of all 8 IR sensor readings");
-  Serial.println("  irstream      : Toggle continuous live IR sensor printing (every 100ms)");
-  Serial.println("  help          : Show this menu");
+  Serial.println(" [WIFI / OTA COMMANDS]");
+  Serial.println("  wifi cred \"SSID\" \"Password\" : Save Wi-Fi credentials to NVM & reconnect");
+  Serial.println("  wifi status                  : Check Wi-Fi connection and ESP32 IP");
+  Serial.println("  ota                          : Switch to OTA upload mode immediately");
+  Serial.println("  help                         : Show this menu");
   Serial.println("---------------------------------------\n");
 }
 
-void handleServoSerialCommands() {
-  if (!Serial.available()) return;
-
-  String line = Serial.readStringUntil('\n');
-  line.trim();
-  if (line.length() == 0) return;
-
-  // Convert to lowercase for command parsing
+void handleServoSerialCommandsWithLine(const String &line) {
   String cmd = line;
   cmd.toLowerCase();
 
@@ -140,3 +136,10 @@ void handleServoSerialCommands() {
   }
 }
 
+void handleServoSerialCommands() {
+  if (!Serial.available()) return;
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+  if (line.length() == 0) return;
+  handleServoSerialCommandsWithLine(line);
+}

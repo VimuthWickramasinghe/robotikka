@@ -17,42 +17,43 @@
 
 ---
 
-## 2. Hardware Architecture & Schematic Reference (`Schematic.pdf` Rev 2.0)
+## 2. Hardware Architecture & Pin Mapping
 
 ### Microcontroller:
 - **Board**: `ESP32-S3-DEV-KIT-N8R8` (ESP32-S3 Xtensa dual-core LX7, 8MB Flash, 8MB PSRAM).
 
 ### Pin Mapping:
-| Subsystem | Net Name | Schematic Ref | ESP32-S3 GPIO | Function / Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| **TB6612FNG Motors (`U6`)** | `PWMA` | Pin 12 | **GPIO 8** | Left Motor PWM Speed |
-| | `AIN1` | Pin 4 | **GPIO 4** | Left Motor Direction 1 |
-| | `AIN2` | Pin 5 | **GPIO 5** | Left Motor Direction 2 |
-| | `PWMB` | Pin 15 | **GPIO 9** | Right Motor PWM Speed |
-| | `BIN1` | Pin 6 | **GPIO 6** | Right Motor Direction 1 |
-| | `BIN2` | Pin 7 | **GPIO 7** | Right Motor Direction 2 |
-| | `ST` (STBY) | Pin 13 | *Tied to +3.3V* | Standby disabled in hardware |
-| **Arm Servos (`U7, U8, U9`)** | `PWM1` | Pin 8 | **GPIO 15** | Servo 1 (Shoulder / Arm) |
-| | `PWM2` | Pin 9 | **GPIO 16** | Servo 2 (Elbow / Tilt) |
-| | `PWM3` | Pin 10 | **GPIO 17** | Servo 3 (Gripper) |
-| **Shared I2C Bus** | `SDA` | Pin 17 | **GPIO 11** | Shared by Display, Color Sensor, TOF Panel |
-| | `SCL` | Pin 18 | **GPIO 12** | Shared I2C Clock |
-| **TOF Distance Panel (`H5`)** | `XSHUT1` | Pin 19 | **GPIO 13** | VL53L0X / VL53L1X Sensor 1 Enable |
-| | `XSHUT2` | Pin 20 | **GPIO 14** | Sensor 2 Enable |
-| | `XSHUT3` | Pin 16 | **GPIO 10** | Sensor 3 Enable |
-| | `XSHUT4` | Pin 29 | **GPIO 48** | Sensor 4 Enable |
-| **Color Sensor (`H6`)** | `INT` | Pin 11 | **GPIO 18** | Color detection interrupt |
-| | `LED` | Pin 27 | **GPIO 21** | Color sensor illumination / Status LED |
-| **8-IR Sensor Array (`J4`)** | `IR_1` | Pin 41 | **GPIO 1** | Analog channel (`ADC1_CH0`) |
-| | `IR_2` | Pin 40 | **GPIO 2** | Analog channel (`ADC1_CH1`) |
-| | `IR_3` | Pin 35 | **GPIO 38** | Digital input |
-| | `IR_4` | Pin 36 | **GPIO 39** (MTCK) | Digital input |
-| | `IR_5` | Pin 37 | **GPIO 40** (MTDO) | Digital input |
-| | `IR_6` | Pin 38 | **GPIO 41** (MTDI) | Digital input |
-| | `IR_7` | Pin 39 | **GPIO 42** (MTMS) | Digital input |
-| | `IR_8` | Pin 28 | **GPIO 47** | Digital input |
-| **User Interface** | `BOOT` | Pin 31 | **GPIO 0** | Triple-click button for OTA |
-| | `RGB_BUILTIN` | Internal | *Board dependent* | Onboard WS2812 RGB NeoPixel |
+| Subsystem | Net / Role | Current ESP32-S3 GPIO | Function / Notes |
+| :--- | :--- | :--- | :--- |
+| **TB6612FNG Motors (`U6`)** | `PWMA` | **GPIO 8** | Left Motor PWM Speed Control |
+| | `AIN1` | **GPIO 39** | Left Motor Direction 1 *(Reassigned from GPIO 4 to free ADC1)* |
+| | `AIN2` | **GPIO 40** | Left Motor Direction 2 *(Reassigned from GPIO 5 to free ADC1)* |
+| | `PWMB` | **GPIO 9** | Right Motor PWM Speed Control |
+| | `BIN1` | **GPIO 41** | Right Motor Direction 1 *(Reassigned from GPIO 6 to free ADC1)* |
+| | `BIN2` | **GPIO 42** | Right Motor Direction 2 *(Reassigned from GPIO 7 to free ADC1)* |
+| | `ST` (STBY) | *Tied to +3.3V* | Standby disabled in hardware |
+| **Arm Servos (`U7, U8, U9`)** | `PWM1` | **GPIO 15** | Servo 1 (Shoulder / Arm) |
+| | `PWM2` | **GPIO 16** | Servo 2 (Elbow / Tilt) |
+| | `PWM3` | **GPIO 17** | Servo 3 (Gripper) |
+| **Shared I2C Bus** | `SDA` | **GPIO 11** | Shared by Display, Color Sensor, TOF Panel |
+| | `SCL` | **GPIO 12** | Shared I2C Clock |
+| **TOF Distance Panel (`H5`)** | `XSHUT1` | **GPIO 13** | VL53L0X / VL53L1X Sensor 1 Enable |
+| | `XSHUT2` | **GPIO 14** | Sensor 2 Enable |
+| | `XSHUT3` | **GPIO 47** | Sensor 3 Enable *(Reassigned from GPIO 10 to free ADC1)* |
+| | `XSHUT4` | **GPIO 48** | Sensor 4 Enable |
+| **Color Sensor (`H6`)** | `INT` | **GPIO 18** | Color detection interrupt |
+| | `LED` | **GPIO 21** | Color sensor illumination / Status indicator LED |
+| **8-IR Sensor Array (`J4`)** | `A6` [PID 1/5] | **GPIO 5** | Left-most PID sensor (`ADC1_CH4`, Weight: -2.0) |
+| *(Reordered Array)* | `A5` [PID 2/5] | **GPIO 6** | Mid-left PID sensor (`ADC1_CH5`, Weight: -1.0) |
+| | `A4` [PID 3/5] | **GPIO 7** | Center PID sensor (`ADC1_CH6`, Weight: 0.0) |
+| | `A3` [PID 4/5] | **GPIO 3** | Mid-right PID sensor (`ADC1_CH2`, Weight: +1.0) |
+| | `A2` [PID 5/5] | **GPIO 2** | Right-most PID sensor (`ADC1_CH1`, Weight: +2.0) |
+| | `A1` [RIGHT] | **GPIO 1** | Right 90° Turn sensor (`ADC1_CH0`, auxiliary) |
+| | `A7` [LEFT] | **GPIO 4** | Left 90° Turn sensor (`ADC1_CH3`, auxiliary) |
+| | `A8` [BACK] | **GPIO 10** | Rear reference / Intersection sensor (`ADC1_CH9`, auxiliary) |
+| **User Interface** | `BOOT` | **GPIO 0** | Mode selector & confirmation button (active LOW) |
+| | `RGB_BUILTIN` | **GPIO 48 / 38** | Onboard WS2812 RGB NeoPixel (`RGB_BUILTIN` macro) |
+| | `STATUS_LED` | **GPIO 21** | Board indicator LED (synchronized with mode changes) |
 
 ### Power Rails:
 - **Battery Input (`J3`)**: 2-pin connector through `SW1` (Motor power) to `+12V` rail and `H2` (REG12).
@@ -64,26 +65,26 @@
 
 ## 3. Firmware Architecture (FreeRTOS Dual-Core)
 
-### Core 0: Wireless Telemetry & UI (`TaskTelemetryOTA`, Priority 1)
-- **Wi-Fi / ArduinoOTA**:
-  - Wi-Fi powers up **OFF** (`WiFi.mode(WIFI_OFF)`) for competition compliance.
-  - Activated strictly on-demand by **pressing the BOOT button (GPIO 0) 3 times within 1.5 seconds**.
-  - Listens on port `3232` with hostname `robotikka-s3`.
-- **Status LED Animations (`setLedOutput`, `updateLedAnimation`)**:
-  - Offline Idle: Breathing vibrant Purple/Magenta (2s cycle).
-  - Wi-Fi Connecting: Fast Amber/Yellow toggle (100ms).
-  - OTA Ready: Steady Green pulse (500ms ON / 500ms OFF).
-  - Active Flashing: Hyper-fast Magenta/Red strobe (40ms).
-- **Serial Test Command Parser (`handleServoSerialCommands`)**:
-  - Real-time command parsing for live servo adjustment (`s1 90`, `sweep 1`, `status`, etc.).
+### Core 0: Button Mode Selector & Telemetry (`buttonLogicTask`, `TaskTelemetryOTA`)
+- **8-Mode Command Selector (`buttonLogicTask`, Priority 2, 50 Hz)**:
+  - Continuously polls BOOT button with a 40 ms debounce window.
+  - State machine: `BTN_IDLE` -> `BTN_COLOR_SELECT` -> `BTN_CONFIRM_BLINK`.
+  - Cycles 8 command modes every 600 ms via onboard WS2812 and GPIO 21 status LED.
+  - 3-second confirmation window before locking in selection and resuming suspended task.
+- **Wireless Telemetry & OTA (`TaskTelemetryOTA`, Priority 1)**:
+  - Wi-Fi starts **OFF** (`WiFi.mode(WIFI_OFF)`) for ADC2 stability and competition compliance.
+  - Activated when **OTA Mode (Green)** is confirmed via button selector.
+  - Listens on port `3232` with mDNS hostname `robotikka-s3`.
+  - Serial test command parser for live servo and IR debugging (`help`, `ir`, `s1 <angle>`, `sweep`, etc.).
 
-### Core 1: Real-Time Robot Control (`TaskRobotControl`, Priority 3)
-- **Deterministic Loop Rate**: Strict **100 Hz (10 ms)** loop via `vTaskDelayUntil()`.
+### Core 1: Real-Time Robot Control (`TaskRobotControl`, Priority 8)
+- **Deterministic Loop Rate**: Strict **500 Hz (2 ms)** loop via `vTaskDelayUntil()`.
 - **Subsystems Handled**:
-  - Sensor acquisition (8-IR array).
-  - High-speed differential PID steering.
-  - TB6612 motor PWM generation at **20 kHz** (silent, no acoustic whine).
-  - TOF sensor reading and wall following distance regulation.
+  - **8-IR Array Acquisition**: Reads all 8 sensors via ESP32-S3 `ADC1` channels with 12-bit resolution.
+  - **PID Steering Centroid**: Computed **strictly over center 5 sensors** (`A6, A5, A4, A3, A2`, weights -2.0 to +2.0).
+  - **Turn & Auxiliary Detection**: Exposes `rightTurn` (`A1`), `leftTurn` (`A7`), and `backSensor` (`A8`) flags.
+  - **Dotted Gap Bridging**: Holds trajectory for gaps up to 350 ms.
+  - **TB6612 Motor PWM**: 20 kHz silent drive.
 
 ---
 
@@ -91,23 +92,23 @@
 
 | File | Purpose |
 | :--- | :--- |
-| [`robotikka.ino`](file:///c:/projects/Robotikka/robotikka/robotikka.ino) | Main application entry point, FreeRTOS task creation, Core 0 telemetry/OTA loop, Core 1 control supervisor. |
-| [`Config.h`](file:///c:/projects/Robotikka/robotikka/Config.h) | Centralized GPIO pin constants, IR array index mapping, and hardware settings. |
-| [`MotorDriver.h`](file:///c:/projects/Robotikka/robotikka/MotorDriver.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/MotorDriver.cpp) | TB6612FNG H-bridge driver (`ledcAttach` 20 kHz, forward, reverse, active brake, coast stop). |
-| [`LineSensor.h`](file:///c:/projects/Robotikka/robotikka/LineSensor.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/LineSensor.cpp) | 8-sensor centroid calculator ($-3.5$ to $+3.5$), dotted line gap detector and trajectory hold. |
-| [`LinePID.h`](file:///c:/projects/Robotikka/robotikka/LinePID.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/LinePID.cpp) | Differential steering PID algorithm with anti-windup clamp and sharp-turn pivot limits. |
+| [`robotikka.ino`](file:///c:/projects/Robotikka/robotikka/robotikka.ino) | Main application entry point, FreeRTOS dual-core task lifecycle setup, supervisor loop. |
+| [`Config.h`](file:///c:/projects/Robotikka/robotikka/Config.h) | Centralized GPIO constants, resolved motor/TOF pin mappings, reordered IR sensor array. |
+| [`button_task.cpp`](file:///c:/projects/Robotikka/robotikka/button_task.cpp) | 8-color command selector state machine, debounced BOOT button reader, dual LED driver. |
+| [`globals.h`](file:///c:/projects/Robotikka/robotikka/globals.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/globals.cpp) | Shared RTOS handles, `RunMode` enums, cross-task state variables. |
+| [`LineSensor.h`](file:///c:/projects/Robotikka/robotikka/LineSensor.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/LineSensor.cpp) | 8-channel ADC reader, 5-sensor PID centroid (-2.0 to +2.0), turn flags, single-line serial output. |
+| [`LinePID.h`](file:///c:/projects/Robotikka/robotikka/LinePID.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/LinePID.cpp) | Differential steering PID algorithm with anti-windup clamp and turn pivot limits. |
+| [`MotorDriver.h`](file:///c:/projects/Robotikka/robotikka/MotorDriver.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/MotorDriver.cpp) | TB6612FNG H-bridge driver (`ledcAttach` 20 kHz, forward, reverse, brake, coast). |
 | [`ServoControl.h`](file:///c:/projects/Robotikka/robotikka/ServoControl.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/ServoControl.cpp) | 16-bit 50 Hz RC servo controller and interactive Serial testing interface. |
 
 ---
 
 ## 5. Development & Troubleshooting Notes
 
-1. **OTA Port Bug in Arduino IDE 2.x**:
-   - Arduino IDE 2.x may report `invalid int value: '{upload.port.properties.port}'`.
-   - Permanent fix: In `C:\Users\tpawi\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.3.8\platform.txt`, change `"{upload.port.properties.port}"` to `"3232"` in `tools.espota.upload.pattern`.
-2. **OTA Host IP Multi-Adapter Conflict**:
-   - If PC has WSL/Hyper-V virtual network adapters (`vEthernet`), `espota.exe` may broadcast the virtual adapter IP causing `[ERROR]: No response from the ESP`.
-   - Explicitly run `espota.py` with `-I <PC_WIFI_IP>` or disable virtual switches during pit calibration if needed.
+1. **IR Sensor Analog ADC1 Alignment**:
+   - Pins `{1, 2, 3, 7, 6, 5, 4, 10}` all map to ESP32-S3 **ADC1**.
+   - Because all IR sensors are on ADC1, Wi-Fi can remain isolated or operate in OTA mode without disrupting analog line acquisition.
+2. **Motor Direction & TOF Pin Relocation**:
+   - Motor direction pins were moved to GPIO 39, 40, 41, 42 and TOF XSHUT3 to GPIO 47 to avoid electrical conflicts with the ADC1 IR sensors.
 3. **ESP32-S3 USB CDC Serial**:
-   - In Arduino IDE **Tools** menu, ensure **USB CDC On Boot: Enabled** so `Serial.begin(115200)` prints directly over the native USB-C port.
-
+   - Ensure **USB CDC On Boot: Enabled** in Arduino IDE Tools menu to communicate over native USB-C at 115200 baud.

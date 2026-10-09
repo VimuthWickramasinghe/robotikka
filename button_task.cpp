@@ -12,18 +12,16 @@ extern TaskHandle_t hTaskRobotControl;
 // ============================================================
 //
 // How it works:
-//   1. On boot, buttonTaskInit() attaches an ISR to the BOOT
-//      button (GPIO 0) and creates the task in SUSPENDED state.
-//   2. When the user presses the BOOT button at any time (even
-//      during maze run), the ISR resumes the task.
-//   3. The task cycles through 8 colors on the onboard RGB LED.
-//      Each color = one command.
-//   4. User presses button during the desired color → LED blinks
-//      that color for ~3 seconds.
-//   5. User presses button again within 3 s → command confirmed,
-//      corresponding flag is set, task suspends itself.
-//   6. If no press within 3 s → selection cancelled, resumes
-//      cycling through all 8 colors.
+//   1. Runs on Core 0 as a lightweight 50 Hz (20 ms) FreeRTOS task.
+//   2. Uses software debouncing on the BOOT button (GPIO 0).
+//   3. In IDLE mode, all LEDs remain off.
+//   4. Pressing the BOOT button starts color cycling through 8 modes.
+//   5. Pressing again during a color enters 3-second CONFIRM blink.
+//   6. Pressing within 3 seconds confirms the command, applies the
+//      mode, and returns to IDLE.
+//   7. If 3 seconds pass without confirmation, cycling resumes.
+//   8. Dual visual feedback: drives onboard WS2812 NeoPixel
+//      AND toggles STATUS_LED_PIN (GPIO 21).
 //
 // ============================================================
 
@@ -43,66 +41,68 @@ struct Color {
 };
 
 static const Color COLORS[NUM_COLORS] = {
-    {255,   0,   0, "linefollow"},
-    {  0, 255,   0, "OTA mode"},
-    {  0,   0, 255, "IR calibrate"},
-    {255, 255,   0, "command4"},
-    {255,   0, 255, "command5"},
-    {  0, 255, 255, "command6"},
-    {128,   0, 255, "command7"},
-    {255, 128,   0, "command8"}
+    {255,   0,   0, "Line Follow"},     // Mode 1: Red
+    {  0, 255,   0, "OTA Mode"},        // Mode 2: Green
+    {  0,   0, 255, "IR Calibrate"},    // Mode 3: Blue
+    {255, 255,   0, "Command 4"},       // Mode 4: Yellow
+    {255,   0, 255, "Command 5"},       // Mode 5: Magenta
+    {  0, 255, 255, "Command 6"},       // Mode 6: Cyan
+    {128,   0, 255, "Command 7"},       // Mode 7: Purple
+    {255, 128,   0, "Command 8"}        // Mode 8: Orange
 };
 
-// --- ISR flag (set by GPIO interrupt, cleared by task) ---
-static volatile bool s_isrButtonPress = false;
-
-// --- Task handle (created suspended, resumed by ISR) ---
 static TaskHandle_t s_buttonTaskHandle = NULL;
 
-// --- ISR: set flag and resume button task ---
-static void IRAM_ATTR onBootButtonISR() {
-    s_isrButtonPress = true;
-
-    if (s_buttonTaskHandle != NULL) {
-        xTaskResumeFromISR(s_buttonTaskHandle);
-    }
-}
-
-// --- Helper: turn RGB LED off ---
-static void rgbOff() {
+// --- Helper: turn all indicator LEDs off ---
+static void ledsOff() {
+#if defined(RGB_BUILTIN)
+    neopixelWrite(RGB_BUILTIN, 0, 0, 0);
+#endif
     neopixelWrite(RGB_LED_PIN, 0, 0, 0);
+    digitalWrite(STATUS_LED_PIN, LOW);
 }
 
-// --- Helper: set RGB LED to a color ---
-static void rgbSet(uint8_t r, uint8_t g, uint8_t b) {
+// --- Helper: set RGB LED and optional status LED ---
+static void ledsSet(uint8_t r, uint8_t g, uint8_t b, bool statusLed = true) {
+#if defined(RGB_BUILTIN)
+    neopixelWrite(RGB_BUILTIN, r, g, b);
+#endif
     neopixelWrite(RGB_LED_PIN, r, g, b);
+    digitalWrite(STATUS_LED_PIN, statusLed ? HIGH : LOW);
 }
 
 // --- Helper: map color index to RunMode ---
 static void setRunMode(uint8_t idx) {
     switch (idx) {
-        case 0: // linefollow
+        case 0: // Line Follow
             g_runMode = LINE_FOLLOW;
             WiFi.mode(WIFI_OFF); // Disable WiFi for ADC2 unlock
             if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
             if (hTaskTelemetryOTA != NULL) vTaskResume(hTaskTelemetryOTA);
+            Serial.println("[MODE] Line Follow active (WiFi OFF, PID active)");
             break;
+
         case 1: // OTA mode
             g_runMode = OTA_MODE;
             if (hTaskRobotControl != NULL) vTaskSuspend(hTaskRobotControl);
             if (hTaskTelemetryOTA != NULL) vTaskResume(hTaskTelemetryOTA);
+            Serial.println("[MODE] OTA Mode active (WiFi enabled)");
             break;
+
         case 2: // IR calibrate
             g_runMode = IR_CALIBRATE;
             WiFi.mode(WIFI_OFF); // Disable WiFi for ADC2 unlock
             if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
             if (hTaskTelemetryOTA != NULL) vTaskResume(hTaskTelemetryOTA);
+            Serial.println("[MODE] IR Calibrate active");
             break;
-        case 3: // command4
-        case 4: // command5
-        case 5: // command6
-        case 6: // command7
-        case 7: // command8
+
+        case 3: // Command 4
+        case 4: // Command 5
+        case 5: // Command 6
+        case 6: // Command 7
+        case 7: // Command 8
+            Serial.printf("[MODE] %s activated (User custom slot)\n", COLORS[idx].name);
             break;
     }
 }
@@ -114,145 +114,149 @@ static void setRunMode(uint8_t idx) {
 void buttonLogicTask(void *pvParameters) {
     (void)pvParameters;
 
-    Serial.println("[DEBUG] buttonLogicTask created, priority 4, stack 4096");
+    Serial.println("[DEBUG] buttonLogicTask running on Core 0 (50 Hz debounced)");
 
-    ButtonState state       = BTN_IDLE;
-    uint8_t     colorIdx    = 0;
-    uint8_t     tickCount   = 0;
-    uint32_t    lastColorMs = 0;
+    // Startup pulse: 150 ms white flash on RGB and status LED to confirm alive
+    ledsSet(40, 40, 40, true);
+    vTaskDelay(pdMS_TO_TICKS(150));
+    ledsOff();
 
-    // Show "system alive" pulse at startup: quick white flash
-    rgbSet(20, 20, 20);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    rgbOff();
+    ButtonState state        = BTN_IDLE;
+    uint8_t     colorIdx     = 0;
+    uint32_t    lastColorMs  = 0;
+    uint32_t    confirmStartMs = 0;
+    uint32_t    lastBlinkMs  = 0;
+    bool        blinkState   = false;
+
+    // Debounce tracking
+    bool     lastRawState    = HIGH; // Boot button is active LOW (unpressed = HIGH)
+    bool     debouncedState  = HIGH;
+    uint32_t lastDebounceMs  = 0;
+
+    const TickType_t xPeriod = pdMS_TO_TICKS(20); // 20 ms tick (50 Hz)
+    TickType_t xLastWakeTime = xTaskGetTickCount();
 
     while (true) {
-        // Poll the ISR flag (safe to read volatile from task)
-        bool pressed = s_isrButtonPress;
-        if (pressed) {
-            s_isrButtonPress = false;
+        uint32_t now = millis();
 
-            // Simple debounce: ignore if pressed < 250 ms ago
-            static uint32_t lastPressMs = 0;
-            uint32_t now = millis();
-            if (now - lastPressMs < 250) {
-                pressed = false;
-            } else {
-                lastPressMs = now;
+        // ----------------------------------------------------
+        // 1. Debounced Button Edge Detection
+        // ----------------------------------------------------
+        bool raw = digitalRead(BOOT_BUTTON_PIN);
+        bool clicked = false;
+
+        if (raw != lastRawState) {
+            lastDebounceMs = now;
+            lastRawState = raw;
+        }
+
+        if ((now - lastDebounceMs) >= 40) { // 40 ms stable window
+            if (raw != debouncedState) {
+                debouncedState = raw;
+                // Transition to LOW means button was pressed down
+                if (debouncedState == LOW) {
+                    clicked = true;
+                }
             }
         }
 
+        // ----------------------------------------------------
+        // 2. State Machine
+        // ----------------------------------------------------
         switch (state) {
 
             // ------------------------------------------------
-            // IDLE — task is running but LED is off
-            // Button press starts color cycling
+            // IDLE: LEDs off, waiting for first click
             // ------------------------------------------------
             case BTN_IDLE:
-                if (pressed) {
+                if (clicked) {
                     state       = BTN_COLOR_SELECT;
                     colorIdx    = 0;
-                    tickCount   = 0;
-                    lastColorMs = millis();
-                    rgbSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b);
-                    Serial.println("[BTN] Color select started");
+                    lastColorMs = now;
+                    ledsSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b, true);
+                    Serial.printf("\n[BTN] Mode selector started! (1/%d: %s)\n", NUM_COLORS, COLORS[colorIdx].name);
                 }
                 break;
 
             // ------------------------------------------------
-            // COLOR_SELECT — cycle through 8 colors
-            // Button press selects current color → confirm
+            // COLOR_SELECT: Cycle through 8 colors every 600 ms
             // ------------------------------------------------
             case BTN_COLOR_SELECT:
-                // Advance color every 500 ms
-                if (millis() - lastColorMs >= 500) {
-                    lastColorMs = millis();
+                // Advance color every 600 ms
+                if (now - lastColorMs >= 600) {
+                    lastColorMs = now;
                     colorIdx = (colorIdx + 1) % NUM_COLORS;
-                    rgbSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b);
+                    ledsSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b, true);
+                    Serial.printf("[BTN] (%d/%d): %s\n", colorIdx + 1, NUM_COLORS, COLORS[colorIdx].name);
                 }
 
-                if (pressed) {
-                    state     = BTN_CONFIRM_BLINK;
-                    tickCount = 0;
-                    Serial.printf("[BTN] Selected: %s — confirm?\n", COLORS[colorIdx].name);
+                if (clicked) {
+                    state          = BTN_CONFIRM_BLINK;
+                    confirmStartMs = now;
+                    lastBlinkMs    = now;
+                    blinkState     = true;
+                    ledsSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b, true);
+                    Serial.printf("[BTN] Selected [%s] — Click again within 3s to CONFIRM!\n", COLORS[colorIdx].name);
                 }
                 break;
 
             // ------------------------------------------------
-            // CONFIRM_BLINK — blink chosen color for 3 s
-            // Button press → confirmed (set flag, go IDLE)
-            // Timeout     → cancelled (resume COLOR_SELECT)
+            // CONFIRM_BLINK: Fast blink (150 ms) for up to 3s
             // ------------------------------------------------
             case BTN_CONFIRM_BLINK:
-                // Blink: ON for 200 ms, then OFF next tick (total ~400 ms cycle)
-                tickCount++;
-                if (tickCount % 2 == 1) {
-                    rgbSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b);
-                } else {
-                    rgbOff();
+                // Fast blink toggle every 150 ms
+                if (now - lastBlinkMs >= 150) {
+                    lastBlinkMs = now;
+                    blinkState = !blinkState;
+                    if (blinkState) {
+                        ledsSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b, true);
+                    } else {
+                        ledsOff();
+                    }
                 }
 
-                if (pressed) {
-                    // Confirmed
+                if (clicked) {
+                    // Confirmed by user click!
                     setRunMode(colorIdx);
-                    rgbOff();
+                    ledsOff();
                     state = BTN_IDLE;
-                    Serial.printf("[BTN] CONFIRMED: %s\n", COLORS[colorIdx].name);
-                } else if (tickCount >= 15) {
-                    // Timeout (~3 s): no confirmation
-                    rgbOff();
+                    Serial.printf("[BTN] >>> CONFIRMED: %s <<<\n\n", COLORS[colorIdx].name);
+                } else if (now - confirmStartMs >= 3000) {
+                    // Timed out (3 seconds without confirm click) -> return to cycle
                     state       = BTN_COLOR_SELECT;
-                    tickCount   = 0;
-                    lastColorMs = millis();
-                    rgbSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b);
-                    Serial.println("[BTN] Confirm timeout, resuming cycle");
+                    lastColorMs = now;
+                    ledsSet(COLORS[colorIdx].r, COLORS[colorIdx].g, COLORS[colorIdx].b, true);
+                    Serial.println("[BTN] Confirmation timed out. Resuming color cycle...");
                 }
                 break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(200));  // 5 Hz
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
     }
 }
 
 // ============================================================
-// buttonTaskInit — call from setup() AFTER createTasks()
-// ============================================================
-//
-// 1. Configure BOOT button GPIO with internal pull-up
-// 2. Attach falling-edge ISR
-// 3. Create the button task in SUSPENDED state
-//
-// The task only runs when the ISR calls xTaskResumeFromISR().
-// This means the button task uses ZERO CPU until the user
-// actually presses the boot button.
+// buttonTaskInit — call from setup() in robotikka.ino
 // ============================================================
 
 void buttonTaskInit() {
-    // Configure boot button pin
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(STATUS_LED_PIN, OUTPUT);
+    digitalWrite(STATUS_LED_PIN, LOW);
 
-    // Attach interrupt on falling edge (button press)
-    attachInterrupt(digitalPinToInterrupt(BOOT_BUTTON_PIN),
-                    onBootButtonISR, FALLING);
-
-    // Create the task SUSPENDED — won't run until resumed by ISR
     BaseType_t result = xTaskCreatePinnedToCore(
         buttonLogicTask,
         "buttonLogic",
         4096,
         NULL,
-        4,              // priority 4
+        2,              // Priority 2
         &s_buttonTaskHandle,
         0               // Core 0
     );
 
     if (result != pdPASS || s_buttonTaskHandle == NULL) {
         Serial.println("[ERR] Failed to create buttonLogicTask!");
-        return;
+    } else {
+        Serial.println("[BTN] Button task initialized and active on Core 0");
     }
-
-    vTaskSuspend(s_buttonTaskHandle);
-
-    Serial.println("[BTN] Boot button ISR attached, task suspended (idle until press)");
-    Serial.flush();
 }
