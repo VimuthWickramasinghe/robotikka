@@ -6,12 +6,12 @@
 // ==============================================================================
 
 // --- TB6612FNG Dual DC Motor Driver (U6) ---
-constexpr int PIN_MOTOR_PWMA  = 8;   // GPIO8:  Motor A PWM Speed Control
-constexpr int PIN_MOTOR_AIN1  = 4;   // GPIO4:  Motor A Direction 1
-constexpr int PIN_MOTOR_AIN2  = 5;   // GPIO5:  Motor A Direction 2
+constexpr int PIN_MOTOR_PWMA  = 39;  // GPIO38: Motor A PWM Speed Control
+constexpr int PIN_MOTOR_AIN1  = 35;  // GPIO35: Motor A Direction 1
+constexpr int PIN_MOTOR_AIN2  = 36;  // GPIO36: Motor A Direction 2
 constexpr int PIN_MOTOR_PWMB  = 9;   // GPIO9:  Motor B PWM Speed Control
-constexpr int PIN_MOTOR_BIN1  = 6;   // GPIO6:  Motor B Direction 1
-constexpr int PIN_MOTOR_BIN2  = 7;   // GPIO7:  Motor B Direction 2
+constexpr int PIN_MOTOR_BIN1  = 37;  // GPIO36: Motor B Direction 1
+constexpr int PIN_MOTOR_BIN2  = 38;  // GPIO37: Motor B Direction 2
 // Note: STBY (Standby) is hardwired to +3.3V in hardware (always enabled)
 
 // --- Arm & Gripper Servos (U7, U8, U9) ---
@@ -34,14 +34,15 @@ constexpr int PIN_COLOR_INT   = 18;  // GPIO18: Color Sensor Interrupt
 constexpr int PIN_COLOR_LED   = 21;  // GPIO21: Net "LED" (Color Sensor illumination / Status LED)
 
 // --- 8-Sensor IR Line Following Array (J4) ---
+// New pin mapping: IR_1 through IR_8 mapped to GPIO1 through GPIO8
 constexpr int PIN_IR_1        = 1;   // GPIO1  (ADC1_CH0)
 constexpr int PIN_IR_2        = 2;   // GPIO2  (ADC1_CH1)
-constexpr int PIN_IR_3        = 38;  // GPIO38 (Digital)
-constexpr int PIN_IR_4        = 39;  // GPIO39 / MTCK (Digital)
-constexpr int PIN_IR_5        = 40;  // GPIO40 / MTDO (Digital)
-constexpr int PIN_IR_6        = 41;  // GPIO41 / MTDI (Digital)
-constexpr int PIN_IR_7        = 42;  // GPIO42 / MTMS (Digital)
-constexpr int PIN_IR_8        = 47;  // GPIO47 (Digital)
+constexpr int PIN_IR_3        = 3;   // GPIO3
+constexpr int PIN_IR_4        = 4;   // GPIO4
+constexpr int PIN_IR_5        = 5;   // GPIO5
+constexpr int PIN_IR_6        = 6;   // GPIO6
+constexpr int PIN_IR_7        = 7;   // GPIO7
+constexpr int PIN_IR_8        = 8;   // GPIO8
 
 inline const int IR_PINS[8] = {
   PIN_IR_1, PIN_IR_2, PIN_IR_3, PIN_IR_4,
@@ -50,5 +51,6 @@ inline const int IR_PINS[8] = {
 
 // --- User Button & Status Indicator ---
 constexpr int BUTTON_PIN      = 0;   // GPIO0: Onboard BOOT button (Active LOW)
+constexpr int RGB_LED_PIN     = 48;  // GPIO48: Onboard WS2812 RGB NeoPixel
 constexpr int STATUS_LED_PIN  = 21;  // GPIO21: Net "LED" (Onboard indicator / Color Sensor LED)
 

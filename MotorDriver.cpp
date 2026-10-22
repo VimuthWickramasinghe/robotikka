@@ -1,78 +1,71 @@
 #include "MotorDriver.h"
 
-// ESP32 PWM channels & frequencies for TB6612
-// In Arduino ESP32 core 3.x, ledcAttach() connects pin directly
-static const uint32_t PWM_FREQ = 20000; // 20 kHz ultrasonic PWM (no motor whine)
-static const uint8_t PWM_RES   = 8;     // 8-bit resolution (0 - 255)
+// TB6612FNG pins from Config.h (EasyEDA Rev 2.0 schematic):
+//   PWMA=38, AIN1=34, AIN2=35  |  PWMB=9, BIN1=36, BIN2=37
+// STBY is hardwired to +3.3 V (always enabled).
+
+static const uint32_t MOTOR_PWM_FREQ_HZ = 20000;  // silent operation
 
 void initMotors() {
-  pinMode(PIN_MOTOR_AIN1, OUTPUT);
-  pinMode(PIN_MOTOR_AIN2, OUTPUT);
-  pinMode(PIN_MOTOR_BIN1, OUTPUT);
-  pinMode(PIN_MOTOR_BIN2, OUTPUT);
+    pinMode(PIN_MOTOR_AIN1, OUTPUT);
+    pinMode(PIN_MOTOR_AIN2, OUTPUT);
+    pinMode(PIN_MOTOR_BIN1, OUTPUT);
+    pinMode(PIN_MOTOR_BIN2, OUTPUT);
 
-  // Setup PWM on ESP32-S3
-  ledcAttach(PIN_MOTOR_PWMA, PWM_FREQ, PWM_RES);
-  ledcAttach(PIN_MOTOR_PWMB, PWM_FREQ, PWM_RES);
+    // Set 20 kHz PWM frequency on the speed pins before first analogWrite
+    analogWriteFrequency(PIN_MOTOR_PWMA, MOTOR_PWM_FREQ_HZ);
+    analogWriteFrequency(PIN_MOTOR_PWMB, MOTOR_PWM_FREQ_HZ);
 
-  stopMotors();
+    // Attach LEDC PWM channels (8-bit default: 0..255 duty)
+    analogWrite(PIN_MOTOR_PWMA, 0);
+    analogWrite(PIN_MOTOR_PWMB, 0);
+
+    stopMotors();
 }
 
-void setMotorSpeeds(int leftSpeed, int rightSpeed) {
-  // Constrain inputs to valid -255 to 255 range
-  leftSpeed  = constrain(leftSpeed, -255, 255);
-  rightSpeed = constrain(rightSpeed, -255, 255);
-
-  // --- Motor A (Left Motor) ---
-  if (leftSpeed > 0) {
-    digitalWrite(PIN_MOTOR_AIN1, HIGH);
-    digitalWrite(PIN_MOTOR_AIN2, LOW);
-    ledcWrite(PIN_MOTOR_PWMA, leftSpeed);
-  } else if (leftSpeed < 0) {
-    digitalWrite(PIN_MOTOR_AIN1, LOW);
-    digitalWrite(PIN_MOTOR_AIN2, HIGH);
-    ledcWrite(PIN_MOTOR_PWMA, -leftSpeed);
-  } else {
-    digitalWrite(PIN_MOTOR_AIN1, LOW);
-    digitalWrite(PIN_MOTOR_AIN2, LOW);
-    ledcWrite(PIN_MOTOR_PWMA, 0);
-  }
-
-  // --- Motor B (Right Motor) ---
-  if (rightSpeed > 0) {
-    digitalWrite(PIN_MOTOR_BIN1, HIGH);
-    digitalWrite(PIN_MOTOR_BIN2, LOW);
-    ledcWrite(PIN_MOTOR_PWMB, rightSpeed);
-  } else if (rightSpeed < 0) {
-    digitalWrite(PIN_MOTOR_BIN1, LOW);
-    digitalWrite(PIN_MOTOR_BIN2, HIGH);
-    ledcWrite(PIN_MOTOR_PWMB, -rightSpeed);
-  } else {
-    digitalWrite(PIN_MOTOR_BIN1, LOW);
-    digitalWrite(PIN_MOTOR_BIN2, LOW);
-    ledcWrite(PIN_MOTOR_PWMB, 0);
-  }
+void setMotorASpeed(int pwm) {
+    if (pwm >= 0) {
+        digitalWrite(PIN_MOTOR_AIN1, HIGH);
+        digitalWrite(PIN_MOTOR_AIN2, LOW);
+    } else {
+        digitalWrite(PIN_MOTOR_AIN1, LOW);
+        digitalWrite(PIN_MOTOR_AIN2, HIGH);
+        pwm = -pwm;
+    }
+    analogWrite(PIN_MOTOR_PWMA, constrain(pwm, 0, 255));
 }
 
-void brakeMotors() {
-  // TB6612 Active Brake: Both inputs HIGH, PWM = 255
-  digitalWrite(PIN_MOTOR_AIN1, HIGH);
-  digitalWrite(PIN_MOTOR_AIN2, HIGH);
-  ledcWrite(PIN_MOTOR_PWMA, 255);
+void setMotorBSpeed(int pwm) {
+    if (pwm >= 0) {
+        digitalWrite(PIN_MOTOR_BIN1, HIGH);
+        digitalWrite(PIN_MOTOR_BIN2, LOW);
+    } else {
+        digitalWrite(PIN_MOTOR_BIN1, LOW);
+        digitalWrite(PIN_MOTOR_BIN2, HIGH);
+        pwm = -pwm;
+    }
+    analogWrite(PIN_MOTOR_PWMB, constrain(pwm, 0, 255));
+}
 
-  digitalWrite(PIN_MOTOR_BIN1, HIGH);
-  digitalWrite(PIN_MOTOR_BIN2, HIGH);
-  ledcWrite(PIN_MOTOR_PWMB, 255);
+void setMotorsSpeed(int pwm) {
+    setMotorASpeed(pwm);
+    setMotorBSpeed(pwm);
 }
 
 void stopMotors() {
-  // Coast stop: Both inputs LOW, PWM = 0
-  digitalWrite(PIN_MOTOR_AIN1, LOW);
-  digitalWrite(PIN_MOTOR_AIN2, LOW);
-  ledcWrite(PIN_MOTOR_PWMA, 0);
-
-  digitalWrite(PIN_MOTOR_BIN1, LOW);
-  digitalWrite(PIN_MOTOR_BIN2, LOW);
-  ledcWrite(PIN_MOTOR_PWMB, 0);
+    digitalWrite(PIN_MOTOR_AIN1, LOW);
+    digitalWrite(PIN_MOTOR_AIN2, LOW);
+    digitalWrite(PIN_MOTOR_BIN1, LOW);
+    digitalWrite(PIN_MOTOR_BIN2, LOW);
+    analogWrite(PIN_MOTOR_PWMA, 0);
+    analogWrite(PIN_MOTOR_PWMB, 0);
 }
 
+void brakeMotors() {
+    digitalWrite(PIN_MOTOR_AIN1, HIGH);
+    digitalWrite(PIN_MOTOR_AIN2, HIGH);
+    digitalWrite(PIN_MOTOR_BIN1, HIGH);
+    digitalWrite(PIN_MOTOR_BIN2, HIGH);
+    analogWrite(PIN_MOTOR_PWMA, 0);
+    analogWrite(PIN_MOTOR_PWMB, 0);
+}
