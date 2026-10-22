@@ -10,8 +10,8 @@
 #include <freertos/semphr.h>
 
 // Wi-Fi credentials for OTA uploads
-const char *ssid = "HONOR 400 Pro";
-const char *password = "lolshiny";
+const char *ssid = "Dialog 4G";
+const char *password = "BHTBEH22T64";
 
 #include "Config.h"
 #include "LineSensor.h"
@@ -142,7 +142,7 @@ void TaskRobotControl(void *pvParameters) {
     for (;;) {
     switch (g_runMode) {
       case LINE_FOLLOW: {
-        printLineSensorValues();
+        follow_line();
         break;
       }
 
