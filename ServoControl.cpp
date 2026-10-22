@@ -1,5 +1,6 @@
 #include "ServoControl.h"
 #include "LineSensor.h"
+#include <ESP32Servo.h>
 
 
 // Standard RC Servo PWM parameters:
@@ -68,9 +69,55 @@ static void printServoHelp() {
   Serial.println("  status        : Print current servo angles");
   Serial.println(" [IR SENSOR COMMANDS]");
   Serial.println("  ir            : Print one snapshot table of all 8 IR sensor readings");
-  Serial.println("  irstream      : Toggle continuous live IR sensor printing (every 100ms)");
+  
   Serial.println("  help          : Show this menu");
   Serial.println("---------------------------------------\n");
+}
+
+// ==============================================================================
+// SERVO_TEST swing mode - Servo class (ESP32Servo) on PWM1/PWM2
+// ==============================================================================
+
+static Servo swingServo1;   // PWM1 (GPIO15, servo U7)
+static Servo swingServo2;   // PWM2 (GPIO16, servo U8)
+static bool s_swingAttached = false;
+
+bool servoSwingInit() {
+    if (s_swingAttached) return true;
+
+    // Standard RC range: 500 us (0 deg) to 2400 us (180 deg)
+    if (!swingServo1.attach(PIN_SERVO_1, 500, 2400)) {
+        Serial.println("[SERVO] ERROR: attach failed on PWM1 (GPIO15)");
+        return false;
+    }
+    if (!swingServo2.attach(PIN_SERVO_2, 500, 2400)) {
+        Serial.println("[SERVO] ERROR: attach failed on PWM2 (GPIO16)");
+        swingServo1.detach();
+        return false;
+    }
+
+    s_swingAttached = true;
+    swingServo1.write(90);   // park centered
+    swingServo2.write(90);
+    Serial.println("[SERVO] Swing servos attached: PWM1(GPIO15) + PWM2(GPIO16)");
+    return true;
+}
+
+void servoSwingWrite(int angle) {
+    if (!s_swingAttached) return;
+    angle = constrain(angle, 0, 180);
+    swingServo1.write(angle);
+    swingServo2.write(angle);
+}
+
+void servoSwingDetach() {
+    if (s_swingAttached) {
+        swingServo1.write(90);   // park before release
+        swingServo2.write(90);
+        swingServo1.detach();
+        swingServo2.detach();
+        s_swingAttached = false;
+    }
 }
 
 void handleServoSerialCommands() {
@@ -89,11 +136,6 @@ void handleServoSerialCommands() {
   } 
   else if (cmd == "ir") {
     printLineSensorValues();
-  }
-  else if (cmd == "irstream") {
-    bool newState = !isIRDebugStreamEnabled();
-    setIRDebugStream(newState);
-    Serial.printf("[IR STREAM] Live sensor stream %s\n", newState ? "ENABLED (streaming every 100ms)" : "DISABLED");
   }
   else if (cmd == "status") {
     Serial.printf("[SERVO STATUS] S1 (GPIO15): %d° | S2 (GPIO16): %d° | S3 (GPIO17): %d°\n",

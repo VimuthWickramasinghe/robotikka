@@ -53,18 +53,40 @@ static const Color COLORS[NUM_COLORS] = {
     {255, 128,   0, "command8"}
 };
 
-// --- ISR flag (set by GPIO interrupt, cleared by task) ---
+// --- ISR flag + first-edge timestamp (debounce reference) ---
 static volatile bool s_isrButtonPress = false;
+static volatile TickType_t s_lastPressTicks = 0;
+// Timestamp of the press that entered the current test mode (set in
+// setRunMode); any ISR edge raised within 300 ms of it is bounce residue
+static volatile TickType_t s_consumeAnchorTicks = 0;
 
+// Exposed for other tasks (e.g. TaskRobotControl in COLOR_DETECT /
+// MOTOR_TEST modes) to poll & consume BOOT presses. Always clears the
+// pending flag so no stale presses linger; a press is only honored if
+// its edge came well after the press that started the mode (bounce filter).
+bool consumeButtonPress() {
+    bool pressed = s_isrButtonPress;
+    s_isrButtonPress = false;
+    if (!pressed) return false;
+
+    if (s_consumeAnchorTicks != 0 &&
+        s_lastPressTicks - s_consumeAnchorTicks < pdMS_TO_TICKS(300)) {
+        return false;   // bounce residue from the mode-entry press
+    }
+    return true;
+}
 // --- Task handle (created suspended, resumed by ISR) ---
 static TaskHandle_t s_buttonTaskHandle = NULL;
 
-// --- ISR: set flag and resume button task ---
+// --- ISR: set flag + timestamp and resume button task ---
 static void IRAM_ATTR onBootButtonISR() {
     s_isrButtonPress = true;
+    s_lastPressTicks = xTaskGetTickCountFromISR();
 
     if (s_buttonTaskHandle != NULL) {
-        xTaskResumeFromISR(s_buttonTaskHandle);
+        if (xTaskResumeFromISR(s_buttonTaskHandle) == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
     }
 }
 
@@ -98,11 +120,35 @@ static void setRunMode(uint8_t idx) {
             if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
             if (hTaskTelemetryOTA != NULL) vTaskResume(hTaskTelemetryOTA);
             break;
-        case 3: // command4
-        case 4: // command5
-        case 5: // command6
-        case 6: // command7
-        case 7: // command8
+        case 3: // command4 — live TCS34725 color detect (runs in TaskRobotControl)
+            g_runMode = COLOR_DETECT;
+            s_consumeAnchorTicks = xTaskGetTickCount();  // debounce reference
+            WiFi.mode(WIFI_OFF); // keep wireless OFF for competition compliance
+            if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
+            if (hTaskTelemetryOTA != NULL) vTaskSuspend(hTaskTelemetryOTA);
+            break;
+        case 4: // command5 — motor PWM sweep test (runs in TaskRobotControl)
+            g_runMode = MOTOR_TEST;
+            s_consumeAnchorTicks = xTaskGetTickCount();  // debounce reference
+            WiFi.mode(WIFI_OFF);
+            if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
+            if (hTaskTelemetryOTA != NULL) vTaskSuspend(hTaskTelemetryOTA);
+            break;
+        case 5: // command6 — servo 30-90deg swing test (runs in TaskRobotControl)
+            g_runMode = SERVO_TEST;
+            s_consumeAnchorTicks = xTaskGetTickCount();  // debounce reference
+            WiFi.mode(WIFI_OFF);
+            if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
+            if (hTaskTelemetryOTA != NULL) vTaskSuspend(hTaskTelemetryOTA);
+            break;
+        case 6: // command7 — future use
+            break;
+        case 7: // command8 — TOF continuous distance stream (runs in TaskRobotControl)
+            g_runMode = TOF_STREAM;
+            s_consumeAnchorTicks = xTaskGetTickCount();  // debounce reference
+            WiFi.mode(WIFI_OFF);
+            if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
+            if (hTaskTelemetryOTA != NULL) vTaskSuspend(hTaskTelemetryOTA);
             break;
     }
 }
@@ -115,6 +161,9 @@ void buttonLogicTask(void *pvParameters) {
     (void)pvParameters;
 
     Serial.println("[DEBUG] buttonLogicTask created, priority 4, stack 4096");
+
+    // Suspend immediately until ISR-resumed by first button press
+    vTaskSuspend(NULL);
 
     ButtonState state       = BTN_IDLE;
     uint8_t     colorIdx    = 0;
@@ -129,7 +178,13 @@ void buttonLogicTask(void *pvParameters) {
     while (true) {
         // Poll the ISR flag (safe to read volatile from task)
         bool pressed = s_isrButtonPress;
-        if (pressed) {
+        if (pressed && (g_runMode == COLOR_DETECT || g_runMode == MOTOR_TEST ||
+                        g_runMode == SERVO_TEST || g_runMode == TOF_STREAM)) {
+            // Boot press during a control-task test loop belongs to
+            // TaskRobotControl's exit check — leave the flag untouched
+            // for it to consume
+            pressed = false;
+        } else if (pressed) {
             s_isrButtonPress = false;
 
             // Simple debounce: ignore if pressed < 250 ms ago
@@ -198,6 +253,9 @@ void buttonLogicTask(void *pvParameters) {
                     rgbOff();
                     state = BTN_IDLE;
                     Serial.printf("[BTN] CONFIRMED: %s\n", COLORS[colorIdx].name);
+                    
+                    // Suspend task so it consumes 0 CPU until next button press
+                    vTaskSuspend(NULL);
                 } else if (tickCount >= 15) {
                     // Timeout (~3 s): no confirmation
                     rgbOff();
@@ -231,11 +289,8 @@ void buttonTaskInit() {
     // Configure boot button pin
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
-    // Attach interrupt on falling edge (button press)
-    attachInterrupt(digitalPinToInterrupt(BOOT_BUTTON_PIN),
-                    onBootButtonISR, FALLING);
-
-    // Create the task SUSPENDED — won't run until resumed by ISR
+    // Create the task FIRST (handle must be valid) — task calls vTaskSuspend(NULL)
+    // as its very first action, so it can't race ahead
     BaseType_t result = xTaskCreatePinnedToCore(
         buttonLogicTask,
         "buttonLogic",
@@ -251,7 +306,10 @@ void buttonTaskInit() {
         return;
     }
 
-    vTaskSuspend(s_buttonTaskHandle);
+    // Only attach the ISR AFTER the task handle is valid, so an early press
+    // can never resume a NULL handle and get silently lost
+    attachInterrupt(digitalPinToInterrupt(BOOT_BUTTON_PIN),
+                    onBootButtonISR, FALLING);
 
     Serial.println("[BTN] Boot button ISR attached, task suspended (idle until press)");
     Serial.flush();

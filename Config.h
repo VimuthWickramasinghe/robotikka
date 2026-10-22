@@ -6,12 +6,12 @@
 // ==============================================================================
 
 // --- TB6612FNG Dual DC Motor Driver (U6) ---
-constexpr int PIN_MOTOR_PWMA  = 8;   // GPIO8:  Motor A PWM Speed Control
-constexpr int PIN_MOTOR_AIN1  = 4;   // GPIO4:  Motor A Direction 1
-constexpr int PIN_MOTOR_AIN2  = 5;   // GPIO5:  Motor A Direction 2
+constexpr int PIN_MOTOR_PWMA  = 39;  // GPIO38: Motor A PWM Speed Control
+constexpr int PIN_MOTOR_AIN1  = 35;  // GPIO35: Motor A Direction 1
+constexpr int PIN_MOTOR_AIN2  = 36;  // GPIO36: Motor A Direction 2
 constexpr int PIN_MOTOR_PWMB  = 9;   // GPIO9:  Motor B PWM Speed Control
-constexpr int PIN_MOTOR_BIN1  = 6;   // GPIO6:  Motor B Direction 1
-constexpr int PIN_MOTOR_BIN2  = 7;   // GPIO7:  Motor B Direction 2
+constexpr int PIN_MOTOR_BIN1  = 37;  // GPIO36: Motor B Direction 1
+constexpr int PIN_MOTOR_BIN2  = 38;  // GPIO37: Motor B Direction 2
 // Note: STBY (Standby) is hardwired to +3.3V in hardware (always enabled)
 
 // --- Arm & Gripper Servos (U7, U8, U9) ---
@@ -34,15 +34,15 @@ constexpr int PIN_COLOR_INT   = 18;  // GPIO18: Color Sensor Interrupt
 constexpr int PIN_COLOR_LED   = 21;  // GPIO21: Net "LED" (Color Sensor illumination / Status LED)
 
 // --- 8-Sensor IR Line Following Array (J4) ---
-// Verified analog pins from working code (ADC2 pins require WiFi.mode(WIFI_OFF))
+// New pin mapping: IR_1 through IR_8 mapped to GPIO1 through GPIO8
 constexpr int PIN_IR_1        = 1;   // GPIO1  (ADC1_CH0)
 constexpr int PIN_IR_2        = 2;   // GPIO2  (ADC1_CH1)
 constexpr int PIN_IR_3        = 3;   // GPIO3
-constexpr int PIN_IR_4        = 7;   // GPIO7
-constexpr int PIN_IR_5        = 6;   // GPIO6
-constexpr int PIN_IR_6        = 5;   // GPIO5
-constexpr int PIN_IR_7        = 4;   // GPIO4
-constexpr int PIN_IR_8        = 10;  // GPIO10
+constexpr int PIN_IR_4        = 4;   // GPIO4
+constexpr int PIN_IR_5        = 5;   // GPIO5
+constexpr int PIN_IR_6        = 6;   // GPIO6
+constexpr int PIN_IR_7        = 7;   // GPIO7
+constexpr int PIN_IR_8        = 8;   // GPIO8
 
 inline const int IR_PINS[8] = {
   PIN_IR_1, PIN_IR_2, PIN_IR_3, PIN_IR_4,

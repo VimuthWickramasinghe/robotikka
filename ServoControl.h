@@ -14,8 +14,15 @@ void setServoAngle(int servoNum, int angle);
 //   "s1 90"    -> Move Servo 1 to 90 degrees
 //   "s2 45"    -> Move Servo 2 to 45 degrees
 //   "s3 120"   -> Move Servo 3 to 120 degrees
-//   "all 90"   -> Move all servos to 90 degrees
+//   "all 90"   -> Move all 3 servos to 90 degrees
 //   "sweep 1"  -> Run a sweep test (0 -> 180 -> 0) on Servo 1
 //   "help"     -> Print available commands
 void handleServoSerialCommands();
+
+// --- SERVO_TEST swing mode (uses the ESP32Servo Servo class) ---
+// Two ESP32Servo instances on PWM1 (GPIO15, servo U7) and
+// PWM2 (GPIO16, servo U8) with their own LEDC timers.
+bool servoSwingInit();      // attach both, park at 90deg; false on attach failure
+void servoSwingWrite(int angle);  // both swing servos to angle (0..180)
+void servoSwingDetach();    // release LEDC + mark unattached
 

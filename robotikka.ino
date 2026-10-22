@@ -10,13 +10,14 @@
 #include <freertos/semphr.h>
 
 // Wi-Fi credentials for OTA uploads
-const char *ssid = "Dialog 4G";
-const char *password = "BHTBEH22T64";
+const char *ssid = "HONOR 400 Pro";
+const char *password = "lolshiny";
 
 #include "Config.h"
-#include "MotorDriver.h"
 #include "LineSensor.h"
-#include "LinePID.h"
+#include "ColorSensor.h"
+#include "MotorDriver.h"
+#include "TOFSensors.h"
 #include "ServoControl.h"
 #include "globals.h"
 
@@ -102,6 +103,9 @@ void TaskTelemetryOTA(void *pvParameters) {
   Serial.printf("[DEBUG] TaskTelemetryOTA created, priority 1, stack 4096\n");
   Serial.printf("[DEBUG] TaskTelemetryOTA running on Core %d\n", xPortGetCoreID());
 
+  // Deterministically suspend until button selection resumes us (no creation race)
+  vTaskSuspend(NULL);
+
   TickType_t xLastWakeTime = xTaskGetTickCount();
   const TickType_t xFrequency = pdMS_TO_TICKS(10);
 
@@ -128,7 +132,9 @@ void TaskRobotControl(void *pvParameters) {
   Serial.printf("[DEBUG] TaskRobotControl running on Core %d\n", xPortGetCoreID());
 
   initLineSensors();
-  initLinePID(45.0f, 0.0f, 25.0f, 160);
+
+  // Deterministically suspend until button selection resumes us (no creation race)
+  vTaskSuspend(NULL);
 
   TickType_t xLastWakeTime = xTaskGetTickCount();
   const TickType_t xControlPeriod = pdMS_TO_TICKS(2);
@@ -137,6 +143,161 @@ void TaskRobotControl(void *pvParameters) {
     switch (g_runMode) {
       case LINE_FOLLOW: {
         printLineSensorValues();
+        break;
+      }
+
+      // Yellow menu selection: live TCS34725 color detector
+      case COLOR_DETECT: {
+        initColorSensor();
+
+        if (colorSensorFound()) {
+          setColorLight(true);   // illumination LED stays ON while reading
+          Serial.println("[COLOR] Live color detect active - press BOOT to exit");
+
+          while (true) {
+            ColorReading cr;
+            bool valid = readColorSensor(cr);
+
+            if (valid) {
+              Serial.printf("[COLOR] R:%u G:%u B:%u C:%u -> RGB(%u,%u,%u) | %u K, %u lux\n",
+                            cr.r, cr.g, cr.b, cr.c, cr.nR, cr.nG, cr.nB,
+                            cr.colorTemp, cr.lux);
+              applyColorToLed(cr);
+            } else {
+              Serial.println("[COLOR] No light (C=0)");
+              neopixelWrite(RGB_LED_PIN, 0, 0, 0);
+            }
+
+            // One integration period between samples
+            vTaskDelay(pdMS_TO_TICKS(COLOR_SAMPLE_PERIOD_MS));
+
+            if (consumeButtonPress()) {
+              Serial.println("[COLOR] Live color detect exited");
+              setColorLight(false);  // illumination LED off
+              break;
+            }
+          }
+        }
+
+        neopixelWrite(RGB_LED_PIN, 0, 0, 0);
+        stopMotors();                  // safety: motors coasted on any exit path
+        setColorLight(false);          // safety: light off on any exit path
+
+        g_runMode = MODE_IDLE;         // release button-task gating so menu re-opens
+        vTaskSuspend(NULL);          // re-suspend until next selection resumes us
+
+        // Resync 2 ms pacing after a long suspension
+        xLastWakeTime = xTaskGetTickCount();
+        break;
+      }
+
+      // Magenta menu selection: motor PWM sweep test
+      case MOTOR_TEST: {
+        Serial.println("[MOTOR] Pulse-width sweep test active - press BOOT to exit");
+
+        // Varying-PWM sweep (triangle wave): BOTH motors forward,
+        // 0 -> 255 -> 0 in steps of 13 every 200 ms
+        int pwmVal = 0;
+        int pwmDir = 13; // Increments by ~5% of 255 per step
+
+        while (true) {
+          pwmVal += pwmDir;
+          if (pwmVal >= 255) { pwmVal = 255; pwmDir = -13; }
+          if (pwmVal <= 0)   { pwmVal = 0;   pwmDir = 13;  }
+          
+          setMotorsSpeed(pwmVal);
+          // Calculates approximate percentage for the serial log
+          Serial.printf("[MOTOR] Sweep BOTH forward @ %d/255 PWM (~%d%%)\n", pwmVal, (pwmVal * 100) / 255);
+
+          vTaskDelay(pdMS_TO_TICKS(350));
+
+          if (consumeButtonPress()) {
+            Serial.println("[MOTOR] Sweep test exited");
+            break;
+          }
+        }
+
+        stopMotors();                // motors coast on exit
+
+        g_runMode = MODE_IDLE;       // release button-task gating so menu re-opens
+        vTaskSuspend(NULL);          // re-suspend until next selection resumes us
+
+        // Resync 2 ms pacing after a long suspension
+        xLastWakeTime = xTaskGetTickCount();
+        break;
+      }
+
+      // Cyan menu selection: servo 30-90deg swing test (Servos 1 & 2)
+      case SERVO_TEST: {
+        if (servoSwingInit()) {
+          Serial.println("[SERVO] Swing test active - press BOOT to exit");
+
+          while (true) {
+            // Both swing servos down to 30deg, hold 1 s
+            servoSwingWrite(30);
+            Serial.println("[SERVO] S1 & S2 -> 30deg");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+
+            if (consumeButtonPress()) {
+              Serial.println("[SERVO] Swing test exited");
+              break;
+            }
+
+            // Both swing servos up to 90deg, hold 1 s
+            servoSwingWrite(90);
+            Serial.println("[SERVO] S1 & S2 -> 90deg");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+
+            if (consumeButtonPress()) {
+              Serial.println("[SERVO] Swing test exited");
+              break;
+            }
+          }
+        }
+
+        servoSwingDetach();            // park 90deg + release LEDC
+
+        g_runMode = MODE_IDLE;         // release button-task gating so menu re-opens
+        vTaskSuspend(NULL);            // re-suspend until next selection resumes us
+
+        // Resync 2 ms pacing after a long suspension
+        xLastWakeTime = xTaskGetTickCount();
+        break;
+      }
+
+      // Orange menu selection: TOF continuous ranging stream
+      case TOF_STREAM: {
+        Serial.println("[TOF] Continuous stream active - press BOOT to exit");
+
+        while (true) {
+          uint16_t mm[TOF_COUNT];
+          readTOFContinuous(mm);
+
+          Serial.print("[TOF]");
+          for (int i = 0; i < TOF_COUNT; i++) {
+            Serial.printf(" %s:", TOF_NAME[i]);
+            if (mm[i] == TOF_INVALID_MM) {
+              Serial.print("---mm");
+            } else {
+              Serial.printf("%dmm", (int)mm[i]);
+            }
+          }
+          Serial.println();
+
+          // Continuous period is 50 ms per sensor; poll at 60 ms
+          vTaskDelay(pdMS_TO_TICKS(60));
+
+          if (consumeButtonPress()) {
+            Serial.println("[TOF] Continuous stream exited");
+            break;
+          }
+        }
+
+        g_runMode = MODE_IDLE;         // release button-task gating so menu re-opens
+        vTaskSuspend(NULL);            // re-suspend until next selection resumes us
+
+        // Resync 2 ms pacing after a long suspension
+        xLastWakeTime = xTaskGetTickCount();
         break;
       }
 
@@ -175,6 +336,14 @@ void setup() {
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
 
+  // TB6612 driver pins + 20 kHz LEDC PWM (coast until commanded)
+  initMotors();
+
+  // TOF panel: unique I2C addresses assigned at boot to avoid the 0x29
+  // clash (front_right re-addressed to 0x34 first, then XSHUT sensors
+  // 0x30-0x33); all 5 enter continuous ranging mode right away
+  initTOFSensors();
+
 
 
   xI2CMutex = xSemaphoreCreateMutex();
@@ -193,7 +362,6 @@ void setup() {
     1
   );
   if (hTaskRobotControl != NULL) {
-    vTaskSuspend(hTaskRobotControl);
     Serial.println("[DEBUG] TaskRobotControl suspended");
   }
 
@@ -208,7 +376,6 @@ void setup() {
     0
   );
   if (hTaskTelemetryOTA != NULL) {
-    vTaskSuspend(hTaskTelemetryOTA);
     Serial.println("[DEBUG] TaskTelemetryOTA suspended");
   }
 

@@ -17,4 +17,4 @@ TaskHandle_t hTaskRobotControl = nullptr;
 // Shared State Flags
 // ==============================================================================
 
-volatile RunMode g_runMode = LINE_FOLLOW;
+volatile RunMode g_runMode = MODE_IDLE;
