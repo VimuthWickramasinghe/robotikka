@@ -20,6 +20,7 @@ struct PIDConfig {
 // Global PID configuration and tracking variables
 extern PIDConfig g_pidConfig;
 extern PIDConfig &pidConfig; // Alias for convenience
+extern PIDConfig g_dashPidConfig; // Dedicated PID configuration for dashed / dotted lines
 extern float g_lineLastError;
 extern float g_lineIntegral;
 
@@ -61,6 +62,9 @@ inline void resetPID() { resetLinePID(); }
 
 // Follow line PID routine: reads sensors, calculates PID steering, and drives motors
 void follow_line();
+
+// Follow dashed / dotted line routine: uses dedicated PID & gap-traversal steering
+void follow_dash_line();
 
 // Format and print all five active IR sensor readings and line status
 void printLineSensorValues();
