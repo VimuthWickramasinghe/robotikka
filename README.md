@@ -73,8 +73,13 @@ Open **Tools > Manage Libraries...** (or `Ctrl + Shift + I`) in the Arduino IDE 
 - **Author**: Kevin Harrington, John K. Bennett
 - **Purpose**: RC servo motor controller with dedicated ESP32 LEDC timers for arm/gripper actuation (Task 2 & 4).
 
+### 4. `U8g2`
+- **Author**: olikraus
+- **Purpose**: SSD1306 128×64 OLED display for live IR sensor values.
+
 ### Core Built-in Libraries (No Installation Needed):
 The following libraries are included with the ESP32 board package:
+- `WebServer.h` — HTTP Web Server for calibration dashboard and live PID tuning.
 - `WiFi.h`, `ESPmDNS.h`, `NetworkUdp.h`, `ArduinoOTA.h` — Over-The-Air wireless updates.
 - `Wire.h` — Hardware I2C communication (`SDA=11`, `SCL=12`).
 - `freertos/FreeRTOS.h`, `freertos/task.h`, `freertos/semphr.h` — Real-time operating system primitives.
@@ -110,7 +115,7 @@ The single onboard **BOOT button (GPIO 0)** and **WS2812 RGB LED (GPIO 48)** all
 | :-: | :--- | :--- | :--- | :--- |
 | **0** | **Red** | `(255, 0, 0)` | `linefollow` | **Task 1: Line Following**: Launches Core 1 500 Hz PID control loop (`follow_line()`). |
 | **1** | **Green** | `(0, 255, 0)` | `OTA mode` | **Wireless Upload**: Turns on Wi-Fi STA, connects to pit network, arms ArduinoOTA on port 3232. |
-| **2** | **Blue** | `(0, 0, 255)` | `IR calibrate` | **IR Calibration**: Enters 8-sensor analog threshold baseline calibration mode. |
+| **2** | **Blue** | `(0, 0, 255)` | `IR calibrate` | **Web Calibration & Live PID**: Hosts SoftAP (`Robotikka-Calib`, `192.168.4.1`) with 4-sample array calibration & live PID regulation. |
 | **3** | **Yellow** | `(255, 255, 0)` | `command4` | **Task 2: Live Color Detect**: Reads TCS34725 with white LED ON; NeoPixel mirrors dominant color (R, G, or B). |
 | **4** | **Magenta** | `(255, 0, 255)` | `command5` | **Motor PWM Sweep**: Triangular ramp ($0 \to 255 \to 0$) driving both motors forward at 20 kHz. |
 | **5** | **Cyan** | `(0, 255, 255)` | `command6` | **Servo Swing Test**: Arm Servos 1 & 2 oscillate between 30° and 90° using `ESP32Servo`. |
@@ -154,7 +159,7 @@ Open the **Serial Monitor** at **115200 baud** with **Newline** ending (`Ctrl + 
 | `s3 <deg>` | Sets Servo 3 (GPIO 17 / Gripper) to `<deg>` (0° to 180°). E.g., `s3 120`. |
 | `all <deg>` | Sets all 3 servos simultaneously to `<deg>`. E.g., `all 90`. |
 | `sweep <1\|2\|3>` | Executes a smooth automated sweep ($0^\circ \to 180^\circ \to 0^\circ$) on the selected servo. |
-| `ir` | Prints an instantaneous snapshot of all 8 IR array sensor readings and computed line centroid. |
+| `ir` | Prints an instantaneous snapshot of the five PID IR sensor readings and computed line centroid. |
 
 ---
 
@@ -183,7 +188,8 @@ Reflecting schematic **Rev 2.0** and [`Config.h`](file:///c:/projects/Robotikka/
 | | *(None)* | — | Front Right Sensor $\to$ Addressed 1st to `0x34` (no XSHUT wired) |
 | **TCS34725 Color Sensor** | `INT` | **GPIO 18** | Color detection interrupt |
 | | `LED` | **GPIO 21** | White illumination LED control / Onboard status LED |
-| **8-IR Line Sensor Array** | `IR_1` – `IR_8` | **GPIO 1 – 8** | Analog ADC1 channels (`ADC1_CH0` to `ADC1_CH7`) |
+| **SSD1306 OLED** | `SDA` / `SCL` | **GPIO 11 / 12** | I²C address `0x3C`; live IR values in line-follow and IR calibration modes |
+| **8-IR Line Sensor Array** | `IR_2` – `IR_6` | **GPIO 2 – 6** | The line-following PID reads only these five analog sensors |
 | **User Interface** | `BOOT` | **GPIO 0** | Active LOW button with internal pull-up and falling-edge ISR |
 | | `RGB_LED` | **GPIO 48** | Onboard WS2812 RGB NeoPixel |
 | | `STATUS_LED` | **GPIO 21** | External status indicator |
@@ -193,7 +199,7 @@ Reflecting schematic **Rev 2.0** and [`Config.h`](file:///c:/projects/Robotikka/
 ## 🔧 FreeRTOS Firmware Architecture
 
 ```
- Core 0: Background & UI                      Core 1: Real-Time Control
+ Core 0: Background & UI                      Core 1: Real-Time Control & Calib
  +----------------------------------+         +----------------------------------+
  | buttonLogicTask (Priority 4)     |         | TaskRobotControl (Priority 8)    |
  | - Resumed by GPIO 0 ISR          |         | - Strict 500 Hz (2 ms) loop      |
@@ -202,10 +208,11 @@ Reflecting schematic **Rev 2.0** and [`Config.h`](file:///c:/projects/Robotikka/
                    | sets mode                | - 5x VL53L0X wall distance PID   |
                    v                          | - 20 kHz TB6612 motor control    |
  +----------------------------------+         +----------------------------------+
- | TaskTelemetryOTA (Priority 1)    |
- | - ArduinoOTA handler (port 3232) |
- | - handleServoSerialCommands()    |
- +----------------------------------+
+ | TaskTelemetryOTA (Priority 1)    |         | TaskCalibration (Priority 3)     |
+ | - ArduinoOTA handler (port 3232) |         | - Dedicated IR sensor calibrate  |
+ | - handleServoSerialCommands()    |         | - Live dynamic min/max tracking  |
+ | - serviceIRDisplay() (OLED loop) |         | - Auto midpoint threshold calc   |
+ +----------------------------------+         +----------------------------------+
 ```
 
 ---
@@ -230,11 +237,47 @@ PIDConfig g_pidConfig = {
 ```
 
 ### Steering Logic:
-- **Centroid**: Position is calculated across active sensors with weights from $-3.5$ (far left) to $+3.5$ (far right).
+- **Centroid**: Position is calculated across GPIO 2–6 with weights from $-2$ (far left) to $+2$ (far right).
+- **Live sensor display**: The SSD1306 OLED shows each sensor's raw ADC value, whether it is above the configured threshold, the threshold itself, and the current line position. Select **IR calibrate** to view readings with the motors stopped; line-follow mode also refreshes the display.
 - **Differential Output**:
   $$\text{Motor A (Left)} = \text{baseSpeed} + \text{correction}$$
   $$\text{Motor B (Right)} = \text{baseSpeed} - \text{correction}$$
 - **Dotted Lines**: When the line is lost for $< 350\text{ ms}$, the robot holds forward trajectory across the gap. If lost longer, it pivots towards the last detected side.
+
+---
+
+## 🌐 Web Calibration Dashboard & 4-Point IR Sampling
+
+When **Blue (IR calibrate)** is selected in the 8-color button menu, the robot hosts its own Wi-Fi Access Point and Web Server:
+
+- **Wi-Fi SSID**: `Robotikka-Calib`
+- **Wi-Fi Password**: `12345678`
+- **Web Dashboard URL**: `http://192.168.4.1/` (also printed on the SSD1306 OLED)
+
+### 1. Live PID Parameter Tuning
+- Directly adjust $K_p$, $K_i$, $K_d$, base speed, max speed, min speed, and line threshold from your smartphone or laptop.
+- Changes are applied instantly to `g_pidConfig` without needing to reflash or open a Serial Monitor.
+
+### 2. 4-Sample IR Array Calibration
+Captures 4 distinct arena positions to determine optical reflection bounds for all 5 sensors (GPIO 2–6):
+1. **Sample 1 (Middle / Center)**: Robot centered over the black line.
+2. **Sample 2 (Right Shift)**: Line shifted towards right sensors.
+3. **Sample 3 (Left Shift)**: Line shifted towards left sensors.
+4. **Sample 4 (Middle while Moving Forward)**: Captures dynamic reflectance while driving forward under safe PWM.
+   - **Toggle Switch**: Can be enabled or disabled directly from the Web UI (`g_calibMoveForwardEnabled`). If disabled, stationary sampling is used.
+
+### 3. Automatic Threshold Calculation
+Clicking **"Calculate & Save Thresholds"** evaluates min/max bounds across the 4 samples:
+$$\text{threshold}_i = \frac{\min_i + \max_i}{2}$$
+Calibrated thresholds are applied globally to `g_sensorThresholds` and `g_pidConfig.threshold`.
+
+### 4. Headless Physical Button Progression
+If testing without a phone, pressing the **BOOT button (GPIO 0)** sequentially advances:
+- Press 1 → Records Sample 1 (Center)
+- Press 2 → Records Sample 2 (Right)
+- Press 3 → Records Sample 3 (Left)
+- Press 4 → Records Sample 4 (Moving Forward if enabled)
+- Press 5 → Computes thresholds, saves, shuts off Wi-Fi, and exits.
 
 ---
 
@@ -257,7 +300,7 @@ PIDConfig g_pidConfig = {
 
 ### 4. ADC2 & Wi-Fi Lock
 - **Symptom**: Analog readings freeze or produce erroneous values when Wi-Fi is active.
-- **Solution**: ESP32 hardware locks ADC2 during Wi-Fi operation. The firmware automatically calls `WiFi.mode(WIFI_OFF)` at boot and before line tracking. In addition, all 8 IR sensors have been routed to ADC1 (GPIO 1 to 8).
+- **Solution**: ESP32 hardware locks ADC2 during Wi-Fi operation. The firmware automatically calls `WiFi.mode(WIFI_OFF)` at boot and before line tracking. The five IR sensors used by the PID are on ADC1 (GPIO 2 to 6).
 
 ### 5. TOF Address Clash (`0x29`)
 - **Symptom**: Only one TOF sensor initializes; others fail.

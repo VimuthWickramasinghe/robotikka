@@ -107,7 +107,7 @@ The system initializes all tasks in a deterministic **suspended state** at boot.
   - When resumed in `OTA_MODE`, connects to configured Wi-Fi (`Dialog 4G`), advertises hostname `robotikka-s3` on port `3232`, and handles incoming OTA updates via `ArduinoOTA.handle()`.
   - Continuously executes [`handleServoSerialCommands()`](file:///c:/projects/Robotikka/robotikka/ServoControl.cpp#L123) for real-time serial calibration (`115200` baud).
 
-### 2. Core 1: Real-Time High-Speed Control
+### 2. Core 1: Real-Time High-Speed Control & Calibration
 - **[`TaskRobotControl`](file:///c:/projects/Robotikka/robotikka/robotikka.ino#L130) (Priority 8, Stack 4096)**:
   - Deterministic **500 Hz (2 ms)** periodic loop paced by `vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(2))`.
   - Dispatches execution based on the shared [`g_runMode`](file:///c:/projects/Robotikka/robotikka/globals.h#L50):
@@ -117,6 +117,13 @@ The system initializes all tasks in a deterministic **suspended state** at boot.
     - `SERVO_TEST`: 30° to 90° arm servo swing cycle.
     - `TOF_STREAM`: 5-sensor continuous distance stream.
   - All test modes implement safe exit via [`consumeButtonPress()`](file:///c:/projects/Robotikka/robotikka/button_task.cpp#L67), stopping motors, parking servos at 90°, extinguishing lights, resetting mode to `MODE_IDLE`, and self-suspending.
+- **[`TaskCalibration`](file:///c:/projects/Robotikka/robotikka/robotikka.ino#L320) (Priority 3, Stack 4096)**:
+  - Dedicated sensor calibration and Web Dashboard server running on Core 1 when `IR_CALIBRATE` (Blue mode) is active.
+  - Hosts SoftAP `Robotikka-Calib` (Password `12345678`, IP `http://192.168.4.1/`) serving an interactive mobile/desktop Web UI.
+  - Allows live tuning of PID parameters (`Kp`, `Ki`, `Kd`, `baseSpeed`, `maxSpeed`, `minSpeed`, `threshold`) saved in real-time.
+  - Implements 4-sample IR array calibration: 1: Middle (Center), 2: Right shift, 3: Left shift, 4: Middle while moving forward (toggleable via web switch `g_calibMoveForwardEnabled`).
+  - Stores all common calibration variables globally (`g_calibSamples`, `g_sensorMin`, `g_sensorMax`, `g_sensorThresholds`).
+  - Streams live readings to the SSD1306 OLED (`CALIB: 192.168.4.1`) and terminates Wi-Fi completely upon exit for competition compliance.
 
 ---
 
@@ -139,7 +146,7 @@ The single onboard `BOOT` button (GPIO 0) and WS2812 RGB LED (GPIO 48) provide h
 | :-: | :--- | :--- | :--- | :--- | :--- |
 | **0** | **Red** | `(255, 0, 0)` | `linefollow` | `LINE_FOLLOW` | Starts Core 1 line following control loop |
 | **1** | **Green** | `(0, 255, 0)` | `OTA mode` | `OTA_MODE` | Activates Wi-Fi STA, joins network, enables ArduinoOTA (port 3232) |
-| **2** | **Blue** | `(0, 0, 255)` | `IR calibrate` | `IR_CALIBRATE` | Calibrates line sensor white/black floor thresholds |
+| **2** | **Blue** | `(0, 0, 255)` | `IR calibrate` | `IR_CALIBRATE` | Hosts Web Dashboard (192.168.4.1) for live PID tuning & 4-sample IR calibration |
 | **3** | **Yellow** | `(255, 255, 0)` | `command4` | `COLOR_DETECT` | Live TCS34725 reading; onboard RGB mirrors dominant box color |
 | **4** | **Magenta** | `(255, 0, 255)` | `command5` | `MOTOR_TEST` | Triangular wave PWM sweep ($0 \to 255 \to 0$, both motors forward) |
 | **5** | **Cyan** | `(0, 255, 255)` | `command6` | `SERVO_TEST` | Arm swing test: Servos 1 & 2 oscillate between 30° and 90° |
@@ -187,7 +194,7 @@ The single onboard `BOOT` button (GPIO 0) and WS2812 RGB LED (GPIO 48) provide h
   - Interactive Serial CLI parser ([`handleServoSerialCommands()`](file:///c:/projects/Robotikka/robotikka/ServoControl.cpp#L123)) accepting `s1 <deg>`, `s2 <deg>`, `s3 <deg>`, `all <deg>`, `sweep <1|2|3>`, `status`, `ir`, `help`.
 
 ### 5. Line Sensor Array & PID Steering ([`LineSensor.h`](file:///c:/projects/Robotikka/robotikka/LineSensor.h) / [`.cpp`](file:///c:/projects/Robotikka/robotikka/LineSensor.cpp))
-- **Sensors**: 8 IR reflective sensor channels mapped to **GPIO 1 through GPIO 8** (`PIN_IR_1` to `PIN_IR_8`) on ADC1.
+- **Sensors**: The 8-channel IR array is mapped to GPIO 1 through GPIO 8; the line-following PID uses IR_2 through IR_6 (GPIO 2-6).
 - **Global PID Variables**: [`g_pidConfig`](file:///c:/projects/Robotikka/robotikka/LineSensor.h#L18) (`Kp=45.0`, `Ki=0.0`, `Kd=25.0`, `baseSpeed=160`, `maxSpeed=240`, `minSpeed=-100`, `maxIntegral=50.0`, `threshold=2000`), [`g_lineLastError`](file:///c:/projects/Robotikka/robotikka/LineSensor.h#L20), [`g_lineIntegral`](file:///c:/projects/Robotikka/robotikka/LineSensor.h#L21), [`g_lastLineState`](file:///c:/projects/Robotikka/robotikka/LineSensor.h#L38).
 - **Steering PID Routine ([`follow_line()`](file:///c:/projects/Robotikka/robotikka/LineSensor.cpp#L125))**:
   - Centroid weighted average position calculation ($-3.5$ to $+3.5$).
@@ -204,13 +211,15 @@ The single onboard `BOOT` button (GPIO 0) and WS2812 RGB LED (GPIO 48) provide h
 | :--- | :--- |
 | [`robotikka.ino`](file:///c:/projects/Robotikka/robotikka/robotikka.ino) | System setup, FreeRTOS task initializations, `TaskTelemetryOTA` (Core 0), and 500 Hz `TaskRobotControl` loop (Core 1). |
 | [`Config.h`](file:///c:/projects/Robotikka/robotikka/Config.h) | Central hardware pin mapping (Rev 2.0 schematic), IR sensor array pins, and timing constants. |
+| [`IRDisplay.h`](file:///c:/projects/Robotikka/robotikka/IRDisplay.h) / [`IRDisplay.cpp`](file:///c:/projects/Robotikka/robotikka/IRDisplay.cpp) | SSD1306 OLED output for live IR readings, IP address, and line-following status. |
+| [`CalibrationWeb.h`](file:///c:/projects/Robotikka/robotikka/CalibrationWeb.h) / [`CalibrationWeb.cpp`](file:///c:/projects/Robotikka/robotikka/CalibrationWeb.cpp) | SoftAP web server (192.168.4.1) hosting real-time PID tuning dashboard & 4-sample IR array calibration. |
 | [`globals.h`](file:///c:/projects/Robotikka/robotikka/globals.h) / [`globals.cpp`](file:///c:/projects/Robotikka/robotikka/globals.cpp) | System-wide enums ([`RunMode`](file:///c:/projects/Robotikka/robotikka/globals.h#L19)), FreeRTOS task handles, queues, and shared flags. |
 | [`button_task.cpp`](file:///c:/projects/Robotikka/robotikka/button_task.cpp) | BOOT button interrupt service routine, 8-color menu FSM, debouncing, and [`consumeButtonPress()`](file:///c:/projects/Robotikka/robotikka/button_task.cpp#L67). |
 | [`MotorDriver.h`](file:///c:/projects/Robotikka/robotikka/MotorDriver.h) / [`MotorDriver.cpp`](file:///c:/projects/Robotikka/robotikka/MotorDriver.cpp) | TB6612FNG H-bridge motor driver with 20 kHz ultrasonic PWM, coasting, and active braking. |
 | [`TOFSensors.h`](file:///c:/projects/Robotikka/robotikka/TOFSensors.h) / [`TOFSensors.cpp`](file:///c:/projects/Robotikka/robotikka/TOFSensors.cpp) | 5x VL53L0X TOF sensors: dynamic addressing sequence (`0x30`-`0x34`) and continuous 50 ms distance streaming. |
 | [`ColorSensor.h`](file:///c:/projects/Robotikka/robotikka/ColorSensor.h) / [`ColorSensor.cpp`](file:///c:/projects/Robotikka/robotikka/ColorSensor.cpp) | Adafruit TCS34725 RGB color reader, LED illumination toggle, and majority RGB classifier for NeoPixel. |
 | [`ServoControl.h`](file:///c:/projects/Robotikka/robotikka/ServoControl.h) / [`ServoControl.cpp`](file:///c:/projects/Robotikka/robotikka/ServoControl.cpp) | 3-servo robotic arm controller (16-bit 50 Hz PWM), Serial CLI interactive menu, and swing test routine. |
-| [`LineSensor.h`](file:///c:/projects/Robotikka/robotikka/LineSensor.h) / [`LineSensor.cpp`](file:///c:/projects/Robotikka/robotikka/LineSensor.cpp) | 8-sensor analog IR reading array on ADC1 pins (GPIO 1 to 8), weighted centroid, differential PID line follower (`follow_line()`), and global PID config (`g_pidConfig`). |
+| [`LineSensor.h`](file:///c:/projects/Robotikka/robotikka/LineSensor.h) / [`LineSensor.cpp`](file:///c:/projects/Robotikka/robotikka/LineSensor.cpp) | Five-sensor analog IR input on GPIO 2 to 6, weighted centroid, differential PID line follower (`follow_line()`), and global PID config (`g_pidConfig`). |
 | [`README.md`](file:///c:/projects/Robotikka/robotikka/README.md) | User-facing documentation, quick-start guide, LED animation charts, and pit calibration reference. |
 
 ---

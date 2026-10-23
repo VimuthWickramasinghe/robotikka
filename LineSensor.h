@@ -28,10 +28,10 @@ extern float g_lineIntegral;
 // ==============================================================================
 
 struct LineSensorState {
-  uint16_t raw[8];       // Raw sensor readings
-  bool isBlack[8];       // True if over black line
+  uint16_t raw[LINE_SENSOR_COUNT]; // Raw readings from GPIO2 through GPIO6
+  bool isBlack[LINE_SENSOR_COUNT]; // True if over black line
   int activeCount;       // Number of sensors currently seeing the line
-  float position;        // Normalized line position (-3.5 to +3.5, 0 = center)
+  float position;        // Line position (-2 to +2, 0 = center)
   bool lineFound;        // True if at least 1 sensor detects the line
   bool isDottedGap;      // True if line temporarily dropped (dotted section handling)
 };
@@ -49,6 +49,9 @@ void initLineSensors();
 // Calibrate white/black thresholds (call during startup routine)
 void calibrateLineSensors();
 
+// Dedicated FreeRTOS Calibration Task
+void TaskCalibration(void *pvParameters);
+
 // Read line sensor array and compute centroid / position
 LineSensorState readLineSensors();
 
@@ -59,5 +62,5 @@ inline void resetPID() { resetLinePID(); }
 // Follow line PID routine: reads sensors, calculates PID steering, and drives motors
 void follow_line();
 
-// Format and print all 8 IR sensor readings (raw analog/digital + binary line status + centroid)
+// Format and print all five active IR sensor readings and line status
 void printLineSensorValues();

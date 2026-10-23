@@ -1,5 +1,7 @@
 #include "LineSensor.h"
 #include "MotorDriver.h"
+#include "IRDisplay.h"
+#include "globals.h"
 
 // ==============================================================================
 // GLOBAL PID VARIABLES
@@ -10,8 +12,8 @@ PIDConfig g_pidConfig = {
   45.0f,   // Kp
   0.0f,    // Ki
   25.0f,   // Kd
-  160,     // baseSpeed (0 - 255)
-  240,     // maxSpeed (0 - 255)
+  50,     // baseSpeed (0 - 255)
+  50,     // maxSpeed (0 - 255)
   -100,    // minSpeed (-255 to 255, allows reverse pivot on sharp curves)
   50.0f,   // maxIntegral (anti-windup clamp)
   2000     // threshold (12-bit ADC threshold: 0 - 4095)
@@ -42,16 +44,19 @@ void resetLinePID() {
 }
 
 void initLineSensors() {
-  // ADC1 is used for GPIO1-8 (IR sensors) on ESP32-S3
+  // The line-following PID reads only GPIO2 through GPIO6.
   analogReadResolution(12);
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < LINE_SENSOR_COUNT; i++) {
     pinMode(IR_PINS[i], INPUT);
   }
   resetLinePID();
 }
 
 void calibrateLineSensors() {
-  // Can be extended with multi-sample white/black floor calibration
+  if (hTaskCalibration != NULL) {
+    g_runMode = IR_CALIBRATE;
+    vTaskResume(hTaskCalibration);
+  }
 }
 
 LineSensorState readLineSensors() {
@@ -60,14 +65,13 @@ LineSensorState readLineSensors() {
   float weightedSum = 0.0f;
   float totalWeight = 0.0f;
 
-  // Sensor array weights from left to right:
-  // Index:   0     1     2     3     4     5     6     7
-  // Weight: -3.5  -2.5  -1.5  -0.5  +0.5  +1.5  +2.5  +3.5
-  const float weights[8] = {-3.5f, -2.5f, -1.5f, -0.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+  // Sensor array weights from left to right, GPIO2 through GPIO6.
+  const float weights[LINE_SENSOR_COUNT] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < LINE_SENSOR_COUNT; i++) {
     state.raw[i] = analogRead(IR_PINS[i]);
-    state.isBlack[i] = (state.raw[i] > g_pidConfig.threshold);
+    uint16_t thresh = (g_sensorThresholds[i] > 0) ? g_sensorThresholds[i] : g_pidConfig.threshold;
+    state.isBlack[i] = (state.raw[i] > thresh);
     if (state.isBlack[i]) {
       state.activeCount++;
       weightedSum += weights[i];
@@ -95,7 +99,7 @@ LineSensorState readLineSensors() {
     } else {
       state.isDottedGap = false;
       // Hard off-track: maintain sign of last seen position to steer back towards line
-      state.position = (s_lastValidPosition >= 0.0f) ? 3.5f : -3.5f;
+      state.position = (s_lastValidPosition >= 0.0f) ? 2.0f : -2.0f;
     }
   }
 
@@ -105,6 +109,7 @@ LineSensorState readLineSensors() {
 
 void follow_line() {
   LineSensorState state = readLineSensors();
+  queueIRDisplayUpdate(state, false);
 
   unsigned long nowMicros = micros();
   float dt = (s_lastMicros == 0) ? 0.002f : (float)(nowMicros - s_lastMicros) / 1000000.0f;
@@ -146,15 +151,15 @@ void follow_line() {
   leftMotorSpeed  = constrain(leftMotorSpeed, g_pidConfig.minSpeed, g_pidConfig.maxSpeed);
   rightMotorSpeed = constrain(rightMotorSpeed, g_pidConfig.minSpeed, g_pidConfig.maxSpeed);
 
-  setMotorASpeed(leftMotorSpeed);
-  setMotorBSpeed(rightMotorSpeed);
+  setMotorASpeed(rightMotorSpeed);
+  setMotorBSpeed(leftMotorSpeed);
 }
 
 void printLineSensorValues() {
   LineSensorState state = readLineSensors();
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < LINE_SENSOR_COUNT; i++) {
     Serial.print(state.raw[i]);
-    if (i < 7) {
+    if (i < LINE_SENSOR_COUNT - 1) {
       Serial.print(" ");
     }
   }

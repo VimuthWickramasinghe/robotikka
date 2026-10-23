@@ -6,6 +6,7 @@
 // Task handle references for control
 extern TaskHandle_t hTaskTelemetryOTA;
 extern TaskHandle_t hTaskRobotControl;
+extern TaskHandle_t hTaskCalibration;
 
 // ============================================================
 // BUTTON TASK — 8-Color Command Selector
@@ -117,7 +118,8 @@ static void setRunMode(uint8_t idx) {
         case 2: // IR calibrate
             g_runMode = IR_CALIBRATE;
             WiFi.mode(WIFI_OFF); // Disable WiFi for ADC2 unlock
-            if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
+            if (hTaskCalibration != NULL) vTaskResume(hTaskCalibration);
+            if (hTaskRobotControl != NULL) vTaskSuspend(hTaskRobotControl);
             if (hTaskTelemetryOTA != NULL) vTaskResume(hTaskTelemetryOTA);
             break;
         case 3: // command4 — live TCS34725 color detect (runs in TaskRobotControl)
