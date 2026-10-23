@@ -68,7 +68,7 @@ static void printServoHelp() {
   Serial.println("  sweep <1|2|3> : Smooth sweep test 0 -> 180 -> 0");
   Serial.println("  status        : Print current servo angles");
   Serial.println(" [IR SENSOR COMMANDS]");
-  Serial.println("  ir            : Print one snapshot table of all 8 IR sensor readings");
+  Serial.println("  ir            : Print one snapshot of the 5 PID IR sensors");
   
   Serial.println("  help          : Show this menu");
   Serial.println("---------------------------------------\n");
@@ -181,4 +181,3 @@ void handleServoSerialCommands() {
     Serial.printf("[UNKNOWN COMMAND] '%s'. Type 'help' for instructions.\n", line.c_str());
   }
 }
-
