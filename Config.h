@@ -28,7 +28,7 @@ constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;
 constexpr int PIN_TOF_XSHUT1  = 13;  // GPIO13: TOF Sensor 1 XSHUT
 constexpr int PIN_TOF_XSHUT2  = 14;  // GPIO14: TOF Sensor 2 XSHUT
 constexpr int PIN_TOF_XSHUT3  = 10;  // GPIO10: TOF Sensor 3 XSHUT
-constexpr int PIN_TOF_XSHUT4  = 48;  // GPIO48: TOF Sensor 4 XSHUT
+constexpr int PIN_TOF_XSHUT4  = 47;  // GPIO47: TOF Sensor 4 XSHUT
 
 // --- Color Sensor (H6) ---
 constexpr int PIN_COLOR_INT   = 18;  // GPIO18: Color Sensor Interrupt

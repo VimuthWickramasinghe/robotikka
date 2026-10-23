@@ -19,9 +19,11 @@ const char *password = "BHTBEH22T64";
 #include "ColorSensor.h"
 #include "MotorDriver.h"
 #include "TOFSensors.h"
+#include "WallFollow.h"
 #include "ServoControl.h"
 #include "globals.h"
 #include "CalibrationWeb.h"
+#include "Display.h"
 
 // ==============================================================================
 // FREERTOS OBJECTS & STATE MANAGEMENT
@@ -271,33 +273,13 @@ void TaskRobotControl(void *pvParameters) {
         break;
       }
 
-      // Orange menu selection: TOF continuous ranging stream
+      // Orange menu selection: TOF wall-follow PD test (left60/right60)
       case TOF_STREAM: {
-        Serial.println("[TOF] Continuous stream active - press BOOT to exit");
+        Serial.println("[TOF] Wall-follow PD test armed - check the entry gate log");
 
-        while (true) {
-          uint16_t mm[TOF_COUNT];
-          readTOFContinuous(mm);
-
-          Serial.print("[TOF]");
-          for (int i = 0; i < TOF_COUNT; i++) {
-            Serial.printf(" %s:", TOF_NAME[i]);
-            if (mm[i] == TOF_INVALID_MM) {
-              Serial.print("---mm");
-            } else {
-              Serial.printf("%dmm", (int)mm[i]);
-            }
-          }
-          Serial.println();
-
-          // Continuous period is 50 ms per sensor; poll at 60 ms
-          vTaskDelay(pdMS_TO_TICKS(60));
-
-          if (consumeButtonPress()) {
-            Serial.println("[TOF] Continuous stream exited");
-            break;
-          }
-        }
+        wallFollowPD();
+        stopMotors();
+        Serial.println("[TOF] Wall-follow PD test exited");
 
         g_runMode = MODE_IDLE;         // release button-task gating so menu re-opens
         vTaskSuspend(NULL);            // re-suspend until next selection resumes us
@@ -397,6 +379,7 @@ void setup() {
   // 0x30-0x33); all 5 enter continuous ranging mode right away
   initTOFSensors();
   initIRDisplay();
+  initDisplay();
 
 
   xI2CMutex = xSemaphoreCreateMutex();
