@@ -21,6 +21,19 @@ PIDConfig g_pidConfig = {
 
 PIDConfig &pidConfig = g_pidConfig;
 
+// Dedicated PID configuration for dashed / dotted lines
+// Uses gentle Kp/Kd and a controlled base speed to avoid abrupt turning during gap entries/exits
+PIDConfig g_dashPidConfig = {
+  35.0f,   // Kp: lower proportional gain for smoother gap transitions
+  0.0f,    // Ki: zero integral to prevent windup during line loss
+  20.0f,   // Kd: damping
+  45,      // baseSpeed: moderate speed for stable dash tracking
+  50,      // maxSpeed
+  0,       // minSpeed: keep wheels moving forward (no aggressive pivot in dashes)
+  30.0f,   // maxIntegral
+  2000     // threshold (fallback threshold)
+};
+
 // Global runtime tracking variables
 float g_lineLastError = 0.0f;
 float g_lineIntegral = 0.0f;
@@ -153,6 +166,67 @@ void follow_line() {
 
   setMotorASpeed(rightMotorSpeed);
   setMotorBSpeed(leftMotorSpeed);
+}
+
+void follow_dash_line() {
+  LineSensorState state = readLineSensors();
+  queueIRDisplayUpdate(state, false);
+
+  unsigned long nowMicros = micros();
+  float dt = (s_lastMicros == 0) ? 0.002f : (float)(nowMicros - s_lastMicros) / 1000000.0f;
+  if (dt <= 0.0f || dt > 0.05f) {
+    dt = 0.002f; // Fallback to nominal 2 ms (500 Hz)
+  }
+  s_lastMicros = nowMicros;
+
+  float lineError = state.position;
+
+  // When sensors see the dash segment, apply dash PID steering
+  if (state.lineFound) {
+    float P = g_dashPidConfig.Kp * lineError;
+
+    // Integral term with anti-windup clamp
+    g_lineIntegral += (lineError * dt);
+    g_lineIntegral = constrain(g_lineIntegral, -g_dashPidConfig.maxIntegral, g_dashPidConfig.maxIntegral);
+    float I = g_dashPidConfig.Ki * g_lineIntegral;
+
+    // Derivative term
+    float D = g_dashPidConfig.Kd * ((lineError - g_lineLastError) / dt);
+    g_lineLastError = lineError;
+
+    float correction = P + I + D;
+
+    int leftMotorSpeed  = g_dashPidConfig.baseSpeed + (int)correction;
+    int rightMotorSpeed = g_dashPidConfig.baseSpeed - (int)correction;
+
+    leftMotorSpeed  = constrain(leftMotorSpeed, g_dashPidConfig.minSpeed, g_dashPidConfig.maxSpeed);
+    rightMotorSpeed = constrain(rightMotorSpeed, g_dashPidConfig.minSpeed, g_dashPidConfig.maxSpeed);
+
+    setMotorASpeed(rightMotorSpeed);
+    setMotorBSpeed(leftMotorSpeed);
+  } else {
+    // Over a gap between dashes:
+    // Freeze integral to prevent error accumulation across gaps
+    g_lineLastError = 0.0f;
+
+    if (state.isDottedGap) {
+      // Hold forward trajectory smoothly through the gap without oscillating
+      setMotorASpeed(g_dashPidConfig.baseSpeed);
+      setMotorBSpeed(g_dashPidConfig.baseSpeed);
+    } else {
+      // Line lost longer than dotted gap threshold: slow pivot towards last seen direction
+      int pivotSpeed = g_dashPidConfig.baseSpeed / 2;
+      if (s_lastValidPosition >= 0.0f) {
+        // Line was on the right: turn right
+        setMotorASpeed(-pivotSpeed);
+        setMotorBSpeed(pivotSpeed);
+      } else {
+        // Line was on the left: turn left
+        setMotorASpeed(pivotSpeed);
+        setMotorBSpeed(-pivotSpeed);
+      }
+    }
+  }
 }
 
 void printLineSensorValues() {

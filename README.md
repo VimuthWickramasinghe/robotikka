@@ -57,32 +57,30 @@ Select **Tools > Board > esp32 > ESP32S3 Dev Module**, then configure the follow
 
 ## 📦 Required Libraries & Installation
 
-Open **Tools > Manage Libraries...** (or `Ctrl + Shift + I`) in the Arduino IDE and install the following libraries:
+Open **Tools > Manage Libraries...** (or `Ctrl + Shift + I`) in the Arduino IDE and install the following external libraries:
 
-### 1. `Adafruit TCS34725`
-- **Author**: Adafruit
-- **Purpose**: I2C color sensor driver for box color detection (Task 2).
-- **Dependencies**: When prompted, click **"Install All"** to include `Adafruit BusIO`.
+### 1. External Libraries (Install via Library Manager)
 
-### 2. `Adafruit_VL53L0X`
-- **Author**: Adafruit
-- **Purpose**: Time-of-Flight distance sensor driver for the 5-sensor wall following panel (Task 3).
-- **Dependencies**: Automatically utilizes `Adafruit BusIO` and `Wire`.
+| Library Name | Header File | Author | Purpose / Used In |
+| :--- | :--- | :--- | :--- |
+| **`Adafruit TCS34725`** | `Adafruit_TCS34725.h` | Adafruit | I2C color sensor driver for line/box color detection. *(Click **"Install All"** to include `Adafruit BusIO`)* |
+| **`Adafruit_VL53L0X`** | `Adafruit_VL53L0X.h` | Adafruit | Time-of-Flight laser distance sensor array (5 sensors for wall tracking) |
+| **`ESP32Servo`** | `ESP32Servo.h` | Kevin Harrington, John K. Bennett | Precision RC servo control using ESP32 LEDC PWM timers |
+| **`U8g2`** | `U8g2lib.h` | olikraus | High-speed monochrome graphics driver for the SSD1306 128×64 OLED display |
 
-### 3. `ESP32Servo`
-- **Author**: Kevin Harrington, John K. Bennett
-- **Purpose**: RC servo motor controller with dedicated ESP32 LEDC timers for arm/gripper actuation (Task 2 & 4).
+#### Install All Libraries via Arduino CLI:
+Run this single command in your terminal or PowerShell to install all required libraries at once:
+```bash
+arduino-cli lib install "Adafruit TCS34725" "Adafruit_VL53L0X" "ESP32Servo" "U8g2"
+```
 
-### 4. `U8g2`
-- **Author**: olikraus
-- **Purpose**: SSD1306 128×64 OLED display for live IR sensor values.
-
-### Core Built-in Libraries (No Installation Needed):
-The following libraries are included with the ESP32 board package:
-- `WebServer.h` — HTTP Web Server for calibration dashboard and live PID tuning.
-- `WiFi.h`, `ESPmDNS.h`, `NetworkUdp.h`, `ArduinoOTA.h` — Over-The-Air wireless updates.
-- `Wire.h` — Hardware I2C communication (`SDA=11`, `SCL=12`).
-- `freertos/FreeRTOS.h`, `freertos/task.h`, `freertos/semphr.h` — Real-time operating system primitives.
+### 2. Core Built-in Libraries (No Installation Needed)
+The following libraries are bundled automatically with the ESP32 board package (`esp32` by Espressif Systems v3.x):
+* **`WiFi.h`** &ndash; Wi-Fi station and soft-AP networking
+* **`WebServer.h`** &ndash; Calibration dashboard & live PID web interface
+* **`ArduinoOTA.h`**, **`ESPmDNS.h`**, **`NetworkUdp.h`** &ndash; Over-The-Air wireless firmware flashing
+* **`Wire.h`** &ndash; Hardware I2C communication (`SDA: GPIO 11`, `SCL: GPIO 12`)
+* **`freertos/FreeRTOS.h`**, **`freertos/task.h`**, **`freertos/queue.h`**, **`freertos/semphr.h`** &ndash; FreeRTOS dual-core task scheduling, queues, and mutex synchronization
 
 ---
 
