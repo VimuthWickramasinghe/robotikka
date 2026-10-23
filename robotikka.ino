@@ -10,16 +10,20 @@
 #include <freertos/semphr.h>
 
 // Wi-Fi credentials for OTA uploads
-const char *ssid = "HONOR 400 Pro";
-const char *password = "lolshiny";
+const char *ssid = "Dialog 4G";
+const char *password = "BHTBEH22T64";
 
 #include "Config.h"
 #include "LineSensor.h"
+#include "IRDisplay.h"
 #include "ColorSensor.h"
 #include "MotorDriver.h"
 #include "TOFSensors.h"
+#include "WallFollow.h"
 #include "ServoControl.h"
 #include "globals.h"
+#include "CalibrationWeb.h"
+#include "Display.h"
 
 // ==============================================================================
 // FREERTOS OBJECTS & STATE MANAGEMENT
@@ -118,6 +122,10 @@ void TaskTelemetryOTA(void *pvParameters) {
       ArduinoOTA.handle();
     }
 
+    if (g_runMode == LINE_FOLLOW || g_runMode == IR_CALIBRATE) {
+      serviceIRDisplay();
+    }
+
     handleServoSerialCommands();
 
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -142,7 +150,7 @@ void TaskRobotControl(void *pvParameters) {
     for (;;) {
     switch (g_runMode) {
       case LINE_FOLLOW: {
-        printLineSensorValues();
+        follow_line();
         break;
       }
 
@@ -265,33 +273,13 @@ void TaskRobotControl(void *pvParameters) {
         break;
       }
 
-      // Orange menu selection: TOF continuous ranging stream
+      // Orange menu selection: TOF wall-follow PD test (left60/right60)
       case TOF_STREAM: {
-        Serial.println("[TOF] Continuous stream active - press BOOT to exit");
+        Serial.println("[TOF] Wall-follow PD test armed - check the entry gate log");
 
-        while (true) {
-          uint16_t mm[TOF_COUNT];
-          readTOFContinuous(mm);
-
-          Serial.print("[TOF]");
-          for (int i = 0; i < TOF_COUNT; i++) {
-            Serial.printf(" %s:", TOF_NAME[i]);
-            if (mm[i] == TOF_INVALID_MM) {
-              Serial.print("---mm");
-            } else {
-              Serial.printf("%dmm", (int)mm[i]);
-            }
-          }
-          Serial.println();
-
-          // Continuous period is 50 ms per sensor; poll at 60 ms
-          vTaskDelay(pdMS_TO_TICKS(60));
-
-          if (consumeButtonPress()) {
-            Serial.println("[TOF] Continuous stream exited");
-            break;
-          }
-        }
+        wallFollowPD();
+        stopMotors();
+        Serial.println("[TOF] Wall-follow PD test exited");
 
         g_runMode = MODE_IDLE;         // release button-task gating so menu re-opens
         vTaskSuspend(NULL);            // re-suspend until next selection resumes us
@@ -308,6 +296,53 @@ void TaskRobotControl(void *pvParameters) {
     }
 
     vTaskDelayUntil(&xLastWakeTime, xControlPeriod);
+  }
+}
+
+/**
+ * Task 3 (Core 1): Dedicated IR Line Sensor Calibration & Display Task
+ */
+void TaskCalibration(void *pvParameters) {
+  Serial.printf("[DEBUG] TaskCalibration created, priority 3, stack 4096\n");
+  Serial.printf("[DEBUG] TaskCalibration running on Core %d\n", xPortGetCoreID());
+
+  // Deterministically suspend until button selection resumes us (no creation race)
+  vTaskSuspend(NULL);
+
+  for (;;) {
+    stopMotors();
+    startCalibrationServer();
+    Serial.println("\n[CALIB] Calibration & PID Web Server active!");
+    Serial.printf("[CALIB] Connect to Wi-Fi 'Robotikka-Calib' (Pass: 12345678) -> http://192.168.4.1/\n");
+
+    while (g_runMode == IR_CALIBRATE) {
+      serviceCalibrationServer();
+
+      LineSensorState state = readLineSensors();
+      queueIRDisplayUpdate(state, true);
+
+      // Hardware BOOT button advances through the 4 calibration steps
+      if (consumeButtonPress()) {
+        if (g_calibCurrentStep < 4) {
+          Serial.printf("[CALIB] Button pressed: taking sample %d/4\n", g_calibCurrentStep + 1);
+          recordCalibrationSample(g_calibCurrentStep);
+        } else if (g_calibCurrentStep == 4) {
+          Serial.println("[CALIB] Button pressed: computing thresholds...");
+          computeCalibrationThresholds();
+        } else {
+          Serial.println("[CALIB] Calibration complete. Exiting to idle...");
+          g_runMode = MODE_IDLE;
+          break;
+        }
+      }
+
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    stopCalibrationServer();
+    stopMotors();
+    Serial.println("[CALIB] TaskCalibration finished session and suspended.");
+    vTaskSuspend(NULL);
   }
 }
 
@@ -343,7 +378,8 @@ void setup() {
   // clash (front_right re-addressed to 0x34 first, then XSHUT sensors
   // 0x30-0x33); all 5 enter continuous ranging mode right away
   initTOFSensors();
-
+  initIRDisplay();
+  initDisplay();
 
 
   xI2CMutex = xSemaphoreCreateMutex();
@@ -377,6 +413,20 @@ void setup() {
   );
   if (hTaskTelemetryOTA != NULL) {
     Serial.println("[DEBUG] TaskTelemetryOTA suspended");
+  }
+
+  // Create TaskCalibration suspended - will be started by button selection
+  xTaskCreatePinnedToCore(
+    TaskCalibration,
+    "TaskCalibration",
+    4096,
+    NULL,
+    3,
+    &hTaskCalibration,
+    1
+  );
+  if (hTaskCalibration != NULL) {
+    Serial.println("[DEBUG] TaskCalibration suspended");
   }
 
   Serial.println("[DEBUG] All tasks created and suspended");
