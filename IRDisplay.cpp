@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "Config.h"
+#include "globals.h"
 
 struct IRDisplayFrame {
   LineSensorState state;
