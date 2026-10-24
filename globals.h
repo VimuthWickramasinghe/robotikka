@@ -28,7 +28,8 @@ enum RunMode : uint8_t {
     TOF_STREAM,    // TOF continuous ranging stream (command8)
     COMMAND4,
     COMMAND5,
-    COMMAND6
+    COMMAND6,
+    COMPETITION_RUN
 };
 
 // ==============================================================================

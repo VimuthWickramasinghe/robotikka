@@ -24,6 +24,7 @@ const char *password = "BHTBEH22T64";
 #include "globals.h"
 #include "CalibrationWeb.h"
 #include "Display.h"
+#include "CompetitionTask.h"
 
 // ==============================================================================
 // FREERTOS OBJECTS & STATE MANAGEMENT
@@ -289,6 +290,17 @@ void TaskRobotControl(void *pvParameters) {
         break;
       }
 
+      // Purple menu selection (command7): WAYA 2.0 full autonomous competition run
+      case COMPETITION_RUN: {
+        runCompetitionMasterSequence();
+        stopMotors();
+
+        g_runMode = MODE_IDLE;
+        vTaskSuspend(NULL);
+        xLastWakeTime = xTaskGetTickCount();
+        break;
+      }
+
       case OTA_MODE:
       default: {
         break;
@@ -386,6 +398,7 @@ void setup() {
 
   // Initialize button task (suspended until pressed)
   buttonTaskInit();
+  initCompetitionButton();
 
   // Create TaskRobotControl suspended - will be started by button selection
   xTaskCreatePinnedToCore(

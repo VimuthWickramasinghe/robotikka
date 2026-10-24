@@ -50,7 +50,7 @@ static const Color COLORS[NUM_COLORS] = {
     {255, 255,   0, "command4"},
     {255,   0, 255, "command5"},
     {  0, 255, 255, "command6"},
-    {128,   0, 255, "command7"},
+    {128,   0, 255, "competition"},
     {255, 128,   0, "command8"}
 };
 
@@ -143,7 +143,12 @@ static void setRunMode(uint8_t idx) {
             if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
             if (hTaskTelemetryOTA != NULL) vTaskSuspend(hTaskTelemetryOTA);
             break;
-        case 6: // command7 — future use
+        case 6: // command7 — WAYA 2.0 full autonomous competition run
+            g_runMode = COMPETITION_RUN;
+            s_consumeAnchorTicks = xTaskGetTickCount();  // debounce reference
+            WiFi.mode(WIFI_OFF); // keep wireless OFF for competition compliance
+            if (hTaskRobotControl != NULL) vTaskResume(hTaskRobotControl);
+            if (hTaskTelemetryOTA != NULL) vTaskSuspend(hTaskTelemetryOTA);
             break;
         case 7: // command8 — TOF continuous distance stream (runs in TaskRobotControl)
             g_runMode = TOF_STREAM;
@@ -181,7 +186,7 @@ void buttonLogicTask(void *pvParameters) {
         // Poll the ISR flag (safe to read volatile from task)
         bool pressed = s_isrButtonPress;
         if (pressed && (g_runMode == COLOR_DETECT || g_runMode == MOTOR_TEST ||
-                        g_runMode == SERVO_TEST || g_runMode == TOF_STREAM)) {
+                        g_runMode == SERVO_TEST || g_runMode == TOF_STREAM || g_runMode == COMPETITION_RUN)) {
             // Boot press during a control-task test loop belongs to
             // TaskRobotControl's exit check — leave the flag untouched
             // for it to consume
