@@ -10,19 +10,27 @@ void initServos();
 void setServoAngle(int servoNum, int angle);
 
 // Process interactive serial commands for servo testing
-// Command formats:
-//   "s1 90"    -> Move Servo 1 to 90 degrees
-//   "s2 45"    -> Move Servo 2 to 45 degrees
-//   "s3 120"   -> Move Servo 3 to 120 degrees
-//   "all 90"   -> Move all 3 servos to 90 degrees
-//   "sweep 1"  -> Run a sweep test (0 -> 180 -> 0) on Servo 1
-//   "help"     -> Print available commands
 void handleServoSerialCommands();
 
-// --- SERVO_TEST swing mode (uses the ESP32Servo Servo class) ---
-// Two ESP32Servo instances on PWM1 (GPIO15, servo U7) and
-// PWM2 (GPIO16, servo U8) with their own LEDC timers.
-bool servoSwingInit();      // attach both, park at 90deg; false on attach failure
-void servoSwingWrite(int angle);  // both swing servos to angle (0..180)
-void servoSwingDetach();    // release LEDC + mark unattached
+// --- Dedicated Arm & Gripper Servos (ESP32Servo) ---
+bool initArmServos();
+void detachArmServos();
 
+// Smooth servo motion helper
+void moveServoSmooth(int servoPin, int fromAngle, int toAngle, int stepDelayMs = SERVO_STEP_DELAY_MS);
+
+// Individual control functions
+void setArmAngle(int angle);
+void setGripperAngle(int angle);
+void gripObject();
+void releaseObject();
+
+// Combined arm action methods
+void lowerArmAndGrip();
+void collectObject();
+void placeObject();
+
+// --- Legacy swing test functions (maintained for test mode compatibility) ---
+bool servoSwingInit();
+void servoSwingWrite(int angle);
+void servoSwingDetach();
